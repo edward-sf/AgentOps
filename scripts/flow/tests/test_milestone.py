@@ -327,3 +327,25 @@ def test_milestone_pr_errors_without_open_pr(
     f.open_prs = []
     with pytest.raises(milestone.MilestoneError, match="no open milestone PR"):
         milestone.milestone_pr(9, dry_run=False)
+
+
+def test_truncated_board_read_makes_no_set_status_calls(
+    wire: Callable[[list[dict[str, Any]]], FakeGh], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    f = wire(existing_issues(tasks()))
+    f.statuses = {22: "In progress", 99: "Done"}  # exactly the limit; #21 only looks off-board
+    monkeypatch.setattr(board, "STATUS_LIMIT", 2)
+    assert board.try_statuses() is None
+    out = run_start(f)
+    assert not any(line.startswith("board") for line in out)
+    assert not any(c[0] == "board" for c in f.calls)
+
+
+def test_dry_run_off_board_reports_but_writes_nothing(
+    wire: Callable[[list[dict[str, Any]]], FakeGh],
+) -> None:
+    f = wire(existing_issues(tasks()))
+    f.statuses = {22: "Ready"}
+    out = run_start(f, dry=True)
+    assert out[0] == "board M9.T1"
+    assert not any(c[0] == "board" for c in f.calls) and f.writes() == []

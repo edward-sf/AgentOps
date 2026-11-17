@@ -7,6 +7,9 @@ from flow import gh
 from flow.config import OWNER, PROJECT_NUMBER, REPO
 
 
+STATUS_LIMIT = 500
+
+
 def find_option(options: list[dict[str, Any]], status: str) -> dict[str, Any] | None:
     wanted = status.strip().lower()
     for option in options:
@@ -68,9 +71,12 @@ def try_statuses() -> dict[int, str] | None:
                 "--format",
                 "json",
                 "--limit",
-                "500",
+                str(STATUS_LIMIT),
             ]
         )
+        if len(data["items"]) >= STATUS_LIMIT:
+            _warn(f"board has {STATUS_LIMIT} or more items; the read may be truncated")
+            return None
         return {
             int(i["content"]["number"]): i["status"]
             for i in data["items"]
