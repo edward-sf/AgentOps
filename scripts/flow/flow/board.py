@@ -6,6 +6,8 @@ from typing import Any
 from flow import gh
 from flow.config import OWNER, PROJECT_NUMBER, REPO
 
+STATUS_LIMIT = 500
+
 
 def find_option(options: list[dict[str, Any]], status: str) -> dict[str, Any] | None:
     wanted = status.strip().lower()
@@ -55,8 +57,8 @@ def set_status(issue_number: int, status: str) -> None:
         _warn(f"could not set #{issue_number} to '{status}': {e}")
 
 
-def statuses() -> dict[int, str]:
-    """Issue number -> board status. Empty on failure (advisory)."""
+def try_statuses() -> dict[int, str] | None:
+    """Issue number -> board status, or None when the board could not be read."""
     try:
         data = gh.json(
             [
@@ -68,9 +70,12 @@ def statuses() -> dict[int, str]:
                 "--format",
                 "json",
                 "--limit",
-                "500",
+                str(STATUS_LIMIT),
             ]
         )
+        if len(data["items"]) >= STATUS_LIMIT:
+            _warn(f"board has {STATUS_LIMIT} or more items; the read may be truncated")
+            return None
         return {
             int(i["content"]["number"]): i["status"]
             for i in data["items"]
@@ -78,4 +83,9 @@ def statuses() -> dict[int, str]:
         }
     except (gh.GhError, KeyError, TypeError, ValueError) as e:
         _warn(f"could not read statuses: {e}")
-        return {}
+        return None
+
+
+def statuses() -> dict[int, str]:
+    """Issue number -> board status. Empty on failure (advisory)."""
+    return try_statuses() or {}

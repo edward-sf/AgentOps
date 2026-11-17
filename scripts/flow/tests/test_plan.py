@@ -85,3 +85,12 @@ def test_indented_checkpoint_line_does_not_count() -> None:
     assert task.checkpoint is False
     (task,) = parse_plan("### M1.T1 A\n\n**Checkpoint**  \n")
     assert task.checkpoint is True
+
+
+def test_find_plan_ignores_the_milestone_plan_template(tmp_path: Path) -> None:
+    (tmp_path / "docs/plans").mkdir(parents=True)
+    (tmp_path / "docs/plans/TEMPLATE-milestone-plan.md").write_text("")
+    (tmp_path / "docs/plans/2026-m1-x.md").write_text("")
+    assert find_plan(1, tmp_path).name == "2026-m1-x.md"
+    template = Path(__file__).parents[3] / "docs/plans/TEMPLATE-milestone-plan.md"
+    assert template.exists() and parse_plan(template.read_text()) == []
