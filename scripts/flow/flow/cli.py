@@ -273,12 +273,14 @@ def cmd_issue_pr(args: argparse.Namespace) -> int:
     link = f"https://github.com/{OWNER}/{REPO}/blob/milestone/m{milestone}/{rel}"
     if task:
         link += "#" + heading_anchor(f"{task.id} {task.title}")
+    summary = args.summary or "<!-- What this PR does, in a few sentences. -->"
     notes = Path(args.notes).read_text().strip() if args.notes else "None."
     template = (root / ".github/PULL_REQUEST_TEMPLATE/issue.md").read_text()
     body = (
         template.replace("{{issue}}", str(args.issue))
         .replace("{{plan_link}}", link)
         .replace("{{notes}}", notes)
+        .replace("<!-- What this PR does, in a few sentences. -->", summary)
     )
     _sh(["git", "push", "-u", "origin", "HEAD"])
     url = (
@@ -358,9 +360,12 @@ def cmd_post_verdict(args: argparse.Namespace) -> int:
     pr = pr_view(args.pr)
     if pr["state"] != "OPEN":
         raise Refusal([f"PR #{args.pr} is {pr['state']}, not open"])
+    head = pr["headRefOid"]
+    if head != args.sha:
+        raise Refusal([f"head moved: reviewed {args.sha[:7]}, current {head[:7]}"])
     findings = Path(args.file).read_text()
     result = cast(Result, args.result)
-    body = format_verdict(result, pr["headRefOid"], findings)
+    body = format_verdict(result, args.sha, findings)
     gh.run(["pr", "comment", str(args.pr), "--body-file", "-"], input=body)
     print(f"✓ {body.splitlines()[0]}")
     return 0
@@ -386,27 +391,41 @@ def cmd_issue_merge(args: argparse.Namespace) -> int:
         checkpoint_approved=APPROVED_LABEL in labels,
     )
     blockers = merge_blockers(state)
+    if not str(pr["headRefName"]).startswith(f"{n}-"):
+        blockers.append(f"branch does not match issue #{n}")
     if blockers:
         raise Refusal(blockers)
-    gh.run(
-        [
-            "pr",
-            "merge",
-            str(args.pr),
-            "--squash",
-            "--subject",
-            pr["title"],
-            "--delete-branch",
-            "--match-head-commit",
-            state.head_sha,
-        ]
-    )
+    try:
+        gh.run(
+            [
+                "pr",
+                "merge",
+                str(args.pr),
+                "--squash",
+                "--subject",
+                pr["title"],
+                "--delete-branch",
+                "--match-head-commit",
+                state.head_sha,
+            ]
+        )
+    except gh.GhError as e:
+        # e.g. --delete-branch failing locally after the remote merge succeeded
+        if pr_view(args.pr)["state"] != "MERGED":
+            raise
+        print(f"warning: gh pr merge reported an error but the PR is merged: {e}", file=sys.stderr)
     board.set_status(n, MERGED)
     print(f"✓ merged PR #{args.pr} into {state.base}; #{n} -> {MERGED}")
     return 0
 
 
 # ---------- entry point ----------
+
+
+def _sha(value: str) -> str:
+    if not re.fullmatch(r"[0-9a-f]{40}", value):
+        raise argparse.ArgumentTypeError("must be a 40-character lowercase hex SHA")
+    return value
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -422,6 +441,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("issue", type=int)
     s.add_argument("title")
     s.add_argument("--notes", help="file with deviation notes")
+    s.add_argument("--summary", help="text replacing the template's Summary placeholder")
     s.set_defaults(fn=cmd_issue_pr)
     s = sub.add_parser("pr-gate", help="wait for CI; print failing logs")
     s.add_argument("pr", type=int)
@@ -433,6 +453,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("pr", type=int)
     s.add_argument("result", type=str.upper, choices=["PASS", "FAIL"])
     s.add_argument("file", help="file with findings")
+    s.add_argument(
+        "--sha", required=True, type=_sha, help="reviewed head SHA (from review-context)"
+    )
     s.set_defaults(fn=cmd_post_verdict)
     s = sub.add_parser("issue-merge", help="squash-merge if the guard allows")
     s.add_argument("pr", type=int)

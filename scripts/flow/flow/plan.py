@@ -65,7 +65,7 @@ def _parse_section(heading: re.Match[str], lines: list[tuple[str, bool]]) -> Tas
         if not live:
             in_acceptance = False
             continue
-        if stripped == "**Checkpoint**":
+        if line.rstrip() == "**Checkpoint**":
             checkpoint = True
         if line.startswith("**Depends on:**"):
             depends = _ANY_ID.findall(line[len("**Depends on:**") :])

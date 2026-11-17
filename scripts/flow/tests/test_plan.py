@@ -78,3 +78,10 @@ def test_find_plan_errors_on_none_and_returns_single(tmp_path: Path) -> None:
         find_plan(1, tmp_path)
     (tmp_path / "docs/plans/2026-m1-x.md").write_text("")
     assert find_plan(1, tmp_path).name == "2026-m1-x.md"
+
+
+def test_indented_checkpoint_line_does_not_count() -> None:
+    (task,) = parse_plan("### M1.T1 A\n\n  **Checkpoint**\n")
+    assert task.checkpoint is False
+    (task,) = parse_plan("### M1.T1 A\n\n**Checkpoint**  \n")
+    assert task.checkpoint is True

@@ -222,7 +222,7 @@ The gate is "every job in `ci` green on the PR's head commit". Requiring it in b
 | `issue-pr <n> "<conventional title>" [--notes FILE]` | Pushes and opens the PR into the milestone branch, with a body from the template, `Part of #n`, and deviation notes. Sets the board to `In review`. |
 | `pr-gate <pr>` | Blocks until `ci` finishes on the head commit. Exits 0 if green. If red, prints only the failing job and step and the tail of its log. |
 | `review-context <pr>` | Prints one bundle: the issue's plan section, its acceptance criteria, the head SHA, and the PR diff. |
-| `post-verdict <pr> PASS\|FAIL <findings-file>` | Posts the review comment with the `Review verdict: … @ <head SHA>` header, reading the SHA itself. |
+| `post-verdict <pr> PASS\|FAIL <findings-file> --sha <sha>` | Posts the review comment with the `Review verdict: … @ <sha>` header. Takes the reviewed SHA (from `review-context`) and refuses if the PR head has moved. |
 | `issue-merge <pr>` | **Guard and merge.** It refuses unless `ci` is green on head, a `PASS @ <head SHA>` verdict exists, and no unapproved checkpoint blocks the issue. Otherwise it squash-merges with the PR title as the message, deletes the branch, and sets the board to `Merged to milestone`. |
 | `milestone-pr <N>` | Fills the milestone PR's "Issue PRs" list and `Closes #…` lines from merged PRs. Agents write the summary, verification, and deviations sections. |
 
