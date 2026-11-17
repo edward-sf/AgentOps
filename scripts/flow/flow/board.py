@@ -55,8 +55,8 @@ def set_status(issue_number: int, status: str) -> None:
         _warn(f"could not set #{issue_number} to '{status}': {e}")
 
 
-def statuses() -> dict[int, str]:
-    """Issue number -> board status. Empty on failure (advisory)."""
+def try_statuses() -> dict[int, str] | None:
+    """Issue number -> board status, or None when the board could not be read."""
     try:
         data = gh.json(
             [
@@ -78,4 +78,9 @@ def statuses() -> dict[int, str]:
         }
     except (gh.GhError, KeyError, TypeError, ValueError) as e:
         _warn(f"could not read statuses: {e}")
-        return {}
+        return None
+
+
+def statuses() -> dict[int, str]:
+    """Issue number -> board status. Empty on failure (advisory)."""
+    return try_statuses() or {}

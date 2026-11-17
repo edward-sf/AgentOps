@@ -425,13 +425,16 @@ def cmd_milestone_start(args: argparse.Namespace) -> int:
     rel = plan_path.relative_to(root).as_posix()
     base = f"https://github.com/{OWNER}/{REPO}/blob/milestone/m{args.milestone}/{rel}"
     template = (root / ".github/PULL_REQUEST_TEMPLATE/milestone.md").read_text()
-    lines = milestone.milestone_start(
-        args.milestone,
-        parse_plan(plan_path.read_text()),
-        lambda t: f"{base}#{milestone.anchor(f'{t.id} {t.title}')}",
-        dry_run=args.dry_run,
-        pr_template=template,
-    )
+    try:
+        lines = milestone.milestone_start(
+            args.milestone,
+            parse_plan(plan_path.read_text()),
+            lambda t: f"{base}#{milestone.anchor(f'{t.id} {t.title}')}",
+            dry_run=args.dry_run,
+            pr_template=template,
+        )
+    except milestone.MilestoneError as e:
+        raise Refusal([str(e)]) from e
     print("\n".join(lines))
     return 0
 
@@ -439,8 +442,8 @@ def cmd_milestone_start(args: argparse.Namespace) -> int:
 def cmd_milestone_pr(args: argparse.Namespace) -> int:
     try:
         lines = milestone.milestone_pr(args.milestone, dry_run=args.dry_run)
-    except ValueError as e:
-        raise Refusal([f"milestone PR body: {e}"]) from e
+    except (ValueError, milestone.MilestoneError) as e:
+        raise Refusal([str(e)]) from e
     print("\n".join(lines))
     return 0
 

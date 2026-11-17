@@ -2,6 +2,7 @@
 
 import re
 import subprocess
+import sys
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -10,11 +11,16 @@ from flow.config import APPROVED_LABEL, AUTHOR, CHECKPOINT_LABEL, OWNER, REPO
 from flow.plan import Task, task_id_from_title
 
 READY = "Ready"
+ISSUE_LIMIT = 200
 CHECKPOINT_NOTE = (
     f"**Checkpoint:** requires author approval (`{APPROVED_LABEL}` label) before dependents start."
 )
 PRS_HEADING = "Issue PRs in this milestone"
 CLOSES_HEADING = "Closes"
+
+
+class MilestoneError(Exception):
+    """A condition the user must resolve; reported as a refusal."""
 
 
 # ---------- pure rendering ----------
@@ -76,15 +82,42 @@ def normalize(text: str) -> str:
     return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").split("\n")).strip()
 
 
+_FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
+
+
+def _unfenced(lines: list[str]) -> list[bool]:
+    live: list[bool] = []
+    fence: str | None = None
+    for line in lines:
+        m = _FENCE.match(line)
+        if fence is None:
+            live.append(m is None)
+            if m:
+                fence = m.group(1)
+        else:
+            live.append(False)
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence):
+                fence = None
+    return live
+
+
 def replace_section(body: str, heading: str, content: str) -> str:
-    """Replace the text under `## <heading>` up to the next `## `; the rest is untouched."""
-    start = re.search(rf"^## {re.escape(heading)}[ \t]*\n", body, re.MULTILINE)
+    """Replace the text under `## <heading>` up to the next `## `; the rest is untouched.
+
+    CRLF is normalised to LF. Lines inside code fences never start or end a section.
+    """
+    lines = body.replace("\r\n", "\n").splitlines(keepends=True)
+    live = _unfenced(lines)
+    want = f"## {heading}"
+    start = next((i for i, x in enumerate(lines) if live[i] and x.rstrip() == want), None)
     if start is None:
         raise ValueError(f"no '## {heading}' section")
-    nxt = re.search(r"^## ", body[start.end() :], re.MULTILINE)
-    end = start.end() + nxt.start() if nxt else len(body)
-    tail = "\n" if nxt else ""
-    return body[: start.end()] + content.strip("\n") + "\n" + tail + body[end:]
+    end = next(
+        (i for i in range(start + 1, len(lines)) if live[i] and lines[i].startswith("## ")), None
+    )
+    tail = "\n" if end is not None else ""
+    rest = "".join(lines[end:]) if end is not None else ""
+    return "".join(lines[:start]) + f"{want}\n" + content.strip("\n") + "\n" + tail + rest
 
 
 def render_rollup(prs: list[tuple[int, str]], issues: list[int]) -> tuple[str, str]:
@@ -107,14 +140,27 @@ def remote_branch_exists(branch: str) -> bool:
     return True
 
 
-def create_remote_branch(branch: str) -> None:
-    for cmd in (
-        ["git", "fetch", "origin", "main"],
-        ["git", "push", "origin", f"origin/main:refs/heads/{branch}"],
-    ):
-        proc = subprocess.run(cmd, capture_output=True, text=True)
-        if proc.returncode != 0:
-            raise gh.GhError(f"{' '.join(cmd[:2])} failed: {proc.stderr.strip()}")
+def git(args: list[str]) -> str:
+    proc = subprocess.run(["git", *args], capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise gh.GhError(f"git {' '.join(args[:2])} failed: {proc.stderr.strip()}")
+    return proc.stdout.strip()
+
+
+def create_remote_branch(branch: str, message: str) -> None:
+    """Push origin/main plus one empty commit to `branch`, without touching the checkout.
+
+    The empty commit gives the draft milestone PR something to differ by.
+    """
+    git(["fetch", "origin", "main"])
+    tree = git(["rev-parse", "origin/main^{tree}"])
+    sha = git(["commit-tree", tree, "-p", "origin/main", "-m", message])
+    git(["push", "origin", f"{sha}:refs/heads/{branch}"])
+
+
+def commits_ahead_of_main(branch: str) -> int:
+    data = gh.json(["api", f"repos/{OWNER}/{REPO}/compare/main...{branch}"])
+    return int(data["ahead_by"])
 
 
 def milestone_title(n: int) -> str:
@@ -147,16 +193,32 @@ def milestone_start(
 ) -> list[str]:
     ms_title = milestone_title(n)
     ms_name = re.sub(rf"^M{n}\s*[-—:]?\s*", "", ms_title)
-    existing = {
-        task_id_from_title(str(i["title"])): i
-        for i in cast(
-            list[dict[str, Any]],
-            gh.json(
-                ["issue", "list", "--state", "all", "--limit", "200"]
-                + ["--json", "number,title,body,labels"]
-            ),
+    listed = cast(
+        list[dict[str, Any]],
+        gh.json(
+            ["issue", "list", "--state", "all", "--limit", str(ISSUE_LIMIT)]
+            + ["--json", "number,title,body,labels"]
+        ),
+    )
+    if len(listed) >= ISSUE_LIMIT:
+        print(
+            f"warning: issue list hit its limit of {ISSUE_LIMIT}; some may be missed",
+            file=sys.stderr,
         )
-    }
+    existing: dict[str | None, dict[str, Any]] = {}
+    for i in listed:
+        tid = task_id_from_title(str(i["title"]))
+        if tid in existing:
+            print(
+                f"warning: {tid} matches issues #{existing[tid]['number']} and #{i['number']};"
+                " using the first",
+                file=sys.stderr,
+            )
+            continue
+        existing[tid] = i
+    statuses = board.try_statuses()
+    if statuses is None:
+        print("warning: board unreadable; not checking board membership", file=sys.stderr)
     lines: list[str] = []
     for task in tasks:
         title = f"{task.id} {task.title}"
@@ -167,6 +229,10 @@ def milestone_start(
             if not dry_run:
                 _create_issue(title, body, ms_title, task.checkpoint)
             continue
+        if statuses is not None and int(issue["number"]) not in statuses:
+            lines.append(f"board {task.id}")  # off the board or no status: fill, never overwrite
+            if not dry_run:
+                board.set_status(int(issue["number"]), READY)
         has_label = CHECKPOINT_LABEL in _labels(issue)
         drift = (
             issue["title"] != title
@@ -181,24 +247,30 @@ def milestone_start(
             _update_issue(int(issue["number"]), title, body, has_label, task.checkpoint)
 
     branch = f"milestone/m{n}"
-    if remote_branch_exists(branch):
+    branch_existed = remote_branch_exists(branch)
+    if branch_existed:
         lines.append(f"branch exists {branch}")
     else:
-        lines.append(f"branch create {branch} from origin/main")
+        lines.append(f"branch create {branch} from origin/main (+ empty start commit)")
         if not dry_run:
-            create_remote_branch(branch)
+            create_remote_branch(branch, f"chore: start milestone m{n}")
     pr = _open_pr_number(branch)
     if pr is not None:
         lines.append(f"pr exists #{pr}")
-    else:
-        lines.append(f"pr create (draft) {branch} -> main")
-        if not dry_run:
-            pr_body = pr_template.replace("<N>", str(n)).replace("<milestone name>", ms_name)
-            gh.run(
-                ["pr", "create", "--draft", "--base", "main", "--head", branch]
-                + ["--title", f"M{n} — {ms_name}", "--body-file", "-"],
-                input=pr_body,
-            )
+        return lines
+    if branch_existed and commits_ahead_of_main(branch) == 0:
+        raise MilestoneError(
+            f"{branch} has no commits ahead of main, so GitHub can't open a PR for it; "
+            f"push a commit to it (or delete the branch) and rerun `flow milestone-start {n}`"
+        )
+    lines.append(f"pr create (draft) {branch} -> main")
+    if not dry_run:
+        pr_body = pr_template.replace("<N>", str(n)).replace("<milestone name>", ms_name)
+        gh.run(
+            ["pr", "create", "--draft", "--base", "main", "--head", branch]
+            + ["--title", f"M{n} — {ms_name}", "--body-file", "-"],
+            input=pr_body,
+        )
     return lines
 
 
@@ -236,7 +308,7 @@ def milestone_pr(n: int, *, dry_run: bool) -> list[str]:
     branch = f"milestone/m{n}"
     prs = gh.json(["pr", "list", "--state", "open", "--head", branch, "--json", "number,body"])
     if not prs:
-        raise gh.GhError(f"no open milestone PR for {branch}; run `flow milestone-start {n}`")
+        raise MilestoneError(f"no open milestone PR for {branch}; run `flow milestone-start {n}`")
     pr = prs[0]
     merged = cast(
         list[dict[str, Any]],
@@ -259,7 +331,7 @@ def milestone_pr(n: int, *, dry_run: bool) -> list[str]:
     new = replace_section(new, CLOSES_HEADING, closes_text)
     if dry_run:
         return [new.rstrip("\n")]
-    if new == pr["body"]:
+    if normalize(new) == normalize(str(pr["body"])):
         return [f"unchanged PR #{pr['number']}"]
     gh.run(["pr", "edit", str(pr["number"]), "--body-file", "-"], input=new)
     return [f"updated PR #{pr['number']}"]
