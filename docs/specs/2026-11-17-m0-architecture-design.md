@@ -187,7 +187,7 @@ The gate is "every job in `ci` green on the PR's head commit". Requiring it in b
 **Roles**
 - **Orchestrator:** the root agent session. It owns the milestone: plans, dispatches work, watches CI, makes sure a review happens, posts the verdict, and merges.
 - **Implementer:** a subagent the Orchestrator dispatches, one issue each. It branches, works with TDD, pushes, and opens the issue PR.
-- **Reviewer:** a fresh subagent with no implementation context. It is used when the Orchestrator implemented the issue itself ("native implementation"). Otherwise the Orchestrator reviews the Implementer's PR itself.
+- **Reviewer:** a fresh subagent with no implementation context. The Orchestrator dispatches one for every issue PR, whoever implemented it. The Reviewer returns its verdict, the reviewed SHA and a findings file; the Orchestrator posts the verdict. Reviewers never post, merge or label.
 
 **Records required before an agent squash-merges an issue PR into `milestone/m<N>`**
 1. **Gate record:** the `ci` workflow is green for the PR's current head commit.
@@ -239,8 +239,8 @@ The gate is "every job in `ci` green on the PR's head commit". Requiring it in b
 The work is split by role, not by script. A per-script skill would repeat `--help`, and every skill description costs context on every turn.
 
 - **`AGENTS.md`:** a short command reference (one line per `flow` command and `make check`). It is always loaded and works with any agent tool. It is all an Implementer needs (`issue-start` → TDD → `make check` → `issue-pr`).
-- **`.claude/skills/orchestrate-milestone/`:** the Orchestrator's loop. Run `milestone-start`. Dispatch Implementers, and say what their prompt must contain. Wait with `pr-gate`. Review the PR yourself, or dispatch a fresh Reviewer after native implementation. Pause at checkpoints and notify the author. Merge with `issue-merge`. Finish with `milestone-pr`. It covers only what's specific to this repo, and defers the general pattern of dispatching subagents to superpowers' `subagent-driven-development`.
-- **`.claude/skills/review-issue-pr/`:** the Reviewer's procedure. Run `review-context`, judge against the plan section and acceptance criteria only, use the FAIL vs deferred-minor rules (a deferred minor finding gets a backlog issue), and post with `post-verdict`. This is where the review standard lives, so fresh Reviewers apply it consistently.
+- **`.claude/skills/orchestrate-milestone/`:** the Orchestrator's loop. Run `milestone-start`. Dispatch Implementers, and say what their prompt must contain. Wait with `pr-gate`, then dispatch a fresh Reviewer for every issue PR and post its verdict. Pause at checkpoints and notify the author. Merge with `issue-merge`. Finish with `milestone-pr`. It covers only what's specific to this repo, and defers the general pattern of dispatching subagents to superpowers' `subagent-driven-development`.
+- **`.claude/skills/review-issue-pr/`:** the Reviewer's procedure (the Orchestrator has already gated the PR). Run `review-context`, judge against the plan section and acceptance criteria only, use the FAIL vs deferred-minor rules (a deferred minor finding gets a backlog issue), and post with `post-verdict`. This is where the review standard lives, so fresh Reviewers apply it consistently.
 - If a skill and a script disagree, the script is authoritative.
 
 ### 11.3 Bootstrapping within M0

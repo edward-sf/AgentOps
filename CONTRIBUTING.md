@@ -42,30 +42,30 @@ main ◄──(milestone PR, author reviews, merge commit)── milestone/m<N> 
 2. **In progress.** Create a branch from the up-to-date milestone branch, named `<issue-number>-<short-slug>`, e.g. `7-acs-source`. One issue per branch.
 3. **Implement with TDD.** Follow the plan's steps: write a failing test, then make it pass, then commit. Small commits are fine on the branch.
 4. **In review.** Open a PR into `milestone/m<N>` using the issue PR template. The PR title is in Conventional Commit form (`feat(pipeline): add ACS source`). The body says `Part of #<n>`, not `Closes`: closing keywords don't fire on non-default branches, so they live in the milestone PR. It also notes any deviation from the plan.
-5. **Merged to milestone.** Checks pass, the task gets a self-review against its plan section, and then it's squash-merged into the milestone branch. The squashed commit message is the PR title. Delete the branch and move the issue to `Merged to milestone`. When the milestone has an agent workflow run, the merge also needs a passing gate record and a passing review record for the PR's current head commit (see Agent workflow below).
+5. **Merged to milestone.** The `ci` gate is green and a PASS review record exists at head, and then it's squash-merged into the milestone branch. The squashed commit message is the PR title. Delete the branch and move the issue to `Merged to milestone`. When the milestone has an agent workflow run, the merge also needs a passing gate record and a passing review record for the PR's current head commit (see Agent workflow below).
 
 ## Agent workflow
 
-Agents run milestones with the `./flow` CLI, which scripts every deterministic step and enforces the rules below. **If this document or a skill disagrees with `./flow`, `./flow` is authoritative.** Run `./flow <command> --help` for exact flags.
+Agents run milestones with the `./flow` CLI, which scripts every deterministic step and enforces the rules below. **If this document or a skill disagrees with `./flow`, `./flow` is authoritative.** Precedence: `./flow` > CONTRIBUTING.md > skills and AGENTS.md. Run `./flow <command> --help` for exact flags.
 
 ### Roles
 
 - **Orchestrator:** the root agent session. It owns the milestone: it dispatches Implementers (one per issue), watches CI, makes sure every issue PR gets a scoped review, and merges.
 - **Implementer:** a subagent dispatched for one issue. It runs `./flow issue-start`, works with TDD, runs `make check`, and opens the PR with `./flow issue-pr`.
-- **Reviewer:** a fresh subagent with no implementation context. It reviews a PR against the issue's plan section and acceptance criteria only, and posts the verdict. It is always needed when the Orchestrator implemented the issue itself (native implementation). In practice the Orchestrator also dispatches one for each Implementer PR, so the review stays independent.
+- **Reviewer:** a fresh subagent with no implementation context. It reviews a PR against the issue's plan section and acceptance criteria only, and **returns** a verdict, the reviewed SHA and a findings file. The Orchestrator dispatches one for every issue PR, whoever implemented it, once `pr-gate` is green. Reviewers never post, merge or label.
 
 ### Records required before merge
 
 An issue PR is squash-merged into `milestone/m<N>` only with both records on its **current head commit**:
 
 1. **Gate record:** the `ci` workflow is green on head (`./flow pr-gate <pr>`).
-2. **Review record:** a PR comment posted after the gate is green, scoped to the issue's plan section and acceptance criteria. Its first line is machine-checked:
+2. **Review record:** a PR comment, posted by the Orchestrator after the gate is green, scoped to the issue's plan section and acceptance criteria. Its first line is machine-checked:
 
    ```
    Review verdict: PASS @ <40-char head SHA>
    ```
 
-   (or `FAIL`), followed by the findings. `./flow post-verdict <pr> PASS|FAIL <findings-file> --sha <sha>` posts it. The SHA is the one printed under `## Head` by `./flow review-context`, and `post-verdict` refuses if the PR head has moved since.
+   (or `FAIL`), followed by the findings. The Orchestrator posts it with `./flow post-verdict <pr> PASS|FAIL <findings-file> --sha <sha>`. The SHA is the one printed under `## Head` by `./flow review-context`, and `post-verdict` refuses if the PR head has moved since.
 
 `./flow issue-merge <pr>` merges only if all of these hold. It merges with `--match-head-commit`, so a push that lands mid-merge is refused too.
 
@@ -94,12 +94,12 @@ Role procedures live in `.claude/skills/`: `orchestrate-milestone` (the Orchestr
 ## Rules
 
 - **`main` is always deployable.** No direct pushes, and only milestone PRs merge into it. `ci` must pass on both issue PRs and milestone PRs.
-- **The author owns `main`.** AI agents may open, update, and squash-merge issue PRs into a milestone branch once checks pass and they've self-reviewed against the plan. Only the author approves and merges milestone PRs into `main` and closes `checkpoint` issues.
+- **The author owns `main`.** AI agents may open, update, and squash-merge issue PRs into a milestone branch once the `ci` gate is green and a PASS review record exists at head. Only the author approves and merges milestone PRs into `main` and closes `checkpoint` issues.
 - **Keep milestone branches current.** If `main` changes during a milestone (rare, e.g. a hotfix), merge `main` into the milestone branch. Don't rebase it, because that would rewrite history other PRs are based on.
 - **Hotfixes.** An urgent fix to `main` outside a milestone gets its own issue and a PR straight to `main`, which the author reviews.
 - **Deviations go in writing.** If implementation must differ from the plan, say so in the PR. If it differs from the spec, update the spec in the same PR, or open a `type:docs` issue first if the change is large enough to discuss.
 - **Checkpoints are blocking.** Issues that require author review must receive approval before subsequent tasks can start. Notify the author when checkpoints require their attention.
-- **New work gets an issue.** Bugs found along the way get a `type:bug` issue. Address them immediately if blocking other milestone tasks.Otherwise, address them at the end of the current milestone. Similarly, deferred minor issues discovered by the final reviewer must have backlog issues created to address them. These should be assigned to existing, open milestones to which they logically belong. If no such milestone exists, the minor issue *must* be addressed in the current milestone.
+- **New work gets an issue.** Bugs found along the way get a `type:bug` issue. Address them immediately if blocking other milestone tasks. Otherwise, address them at the end of the current milestone. Similarly, deferred minor issues discovered by the final reviewer must have backlog issues created to address them. These should be assigned to existing, open milestones to which they logically belong. If no such milestone exists, the minor issue *must* be addressed in the current milestone.
 - **Plans are just-in-time.** When a milestone starts, write its detailed plan, then reconcile its issues (edit, split, add, close) so IDs match the plan's tasks before any issue moves to `Ready`.
 
 ## Definition of done
@@ -109,7 +109,7 @@ Per issue PR; the milestone PR re-checks across the whole slice.
 - [ ] Tests added or updated, and they pass locally and in CI. Tests run against real Postgres, not mocks.
 - [ ] Backend: `ruff check`, `ruff format --check`, `mypy` and `pytest` pass.
 - [ ] Frontend: `eslint`, `tsc`, `vitest` and `next build` pass. The first three are in `make check`. `next build` runs in CI.
-- [ ] `make check` is green. It runs the same lint, type and test steps as `ci` and prints only failures.
+- [ ] `make check` is green. It mirrors `ci` except `next build` and image builds, and prints only failures.
 - [ ] Generated API types are up to date (`make api-types`, from M0.T8) whenever the API schema changed.
 - [ ] The issue's acceptance criteria are met
 - [ ] Spec, plan, or README updated if behavior or decisions changed
