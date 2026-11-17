@@ -1,6 +1,6 @@
 ---
 name: review-issue-pr
-description: Use when you are asked to review an AgentOps issue PR and post a PASS or FAIL verdict. It is the Reviewer's procedure, scoped to the issue's plan section and acceptance criteria.
+description: Use when you are asked to review an AgentOps issue PR and return a PASS or FAIL verdict. It is the Reviewer's procedure, scoped to the issue's plan section and acceptance criteria.
 ---
 
 # Review an issue PR
