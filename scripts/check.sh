@@ -12,6 +12,10 @@ STEPS=(
   "frontend: lint|frontend|npm run lint"
   "frontend: typecheck|frontend|npm run typecheck"
   "frontend: test|frontend|npm test"
+  "flow: ruff check|scripts/flow|uv run ruff check"
+  "flow: ruff format --check|scripts/flow|uv run ruff format --check"
+  "flow: mypy|scripts/flow|uv run mypy"
+  "flow: pytest|scripts/flow|uv run pytest -q"
 )
 
 failed=0
