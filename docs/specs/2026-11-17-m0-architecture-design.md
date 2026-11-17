@@ -240,8 +240,8 @@ The work is split by role, not by script. A per-script skill would repeat `--hel
 
 - **`AGENTS.md`:** a short command reference (one line per `flow` command and `make check`). It is always loaded and works with any agent tool. It is all an Implementer needs (`issue-start` → TDD → `make check` → `issue-pr`).
 - **`.claude/skills/orchestrate-milestone/`:** the Orchestrator's loop. Run `milestone-start`. Dispatch Implementers, and say what their prompt must contain. Wait with `pr-gate`, then dispatch a fresh Reviewer for every issue PR and post its verdict. Pause at checkpoints and notify the author. Merge with `issue-merge`. Finish with `milestone-pr`. It covers only what's specific to this repo, and defers the general pattern of dispatching subagents to superpowers' `subagent-driven-development`.
-- **`.claude/skills/review-issue-pr/`:** the Reviewer's procedure (the Orchestrator has already gated the PR). Run `review-context`, judge against the plan section and acceptance criteria only, use the FAIL vs deferred-minor rules (a deferred minor finding gets a backlog issue), and post with `post-verdict`. This is where the review standard lives, so fresh Reviewers apply it consistently.
-- If a skill and a script disagree, the script is authoritative.
+- **`.claude/skills/review-issue-pr/`:** the Reviewer's procedure (the Orchestrator has already gated the PR). Run `review-context`, judge against the plan section and acceptance criteria only, use the FAIL vs deferred-minor rules (a deferred minor finding gets a backlog issue), and return the verdict, reviewed SHA and findings file to the Orchestrator, which posts it with `post-verdict`. This is where the review standard lives, so fresh Reviewers apply it consistently.
+- Precedence when sources disagree: `./flow` > CONTRIBUTING.md > skills and AGENTS.md.
 
 ### 11.3 Bootstrapping within M0
 

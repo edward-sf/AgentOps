@@ -28,7 +28,7 @@ You are a Reviewer: a fresh agent with no implementation context. Review one PR 
 
 ## Re-review after a FAIL
 
-Review only the fix diff (the new commits) against your earlier findings, and check that nothing new broke. Post a new verdict at the new head SHA.
+Review only the fix diff (the new commits) against your earlier findings, and check that nothing new broke. Return a new verdict for the new head SHA.
 
 ## Do not
 

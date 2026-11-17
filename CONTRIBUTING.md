@@ -147,6 +147,6 @@ Run from the repo root. Rows marked "(from M0.T<n>)" arrive with that task.
 | `./flow issue-pr <n> "<title>" [--summary TEXT] [--notes FILE]` | Push and open the issue PR, mark In review |
 | `./flow pr-gate <pr>` | Wait for `ci` on head; print failing logs |
 | `./flow review-context <pr>` | Print task, criteria, head SHA and diff |
-| `./flow post-verdict <pr> PASS\|FAIL <file> --sha <sha>` | Comment the verdict at the reviewed head |
+| `./flow post-verdict <pr> PASS\|FAIL <file> --sha <sha>` | (Orchestrator only) Comment the verdict at the reviewed head |
 | `./flow issue-merge <pr>` | Squash-merge if the guard allows |
 | `./flow milestone-pr <N>` | Roll merged issue PRs into the milestone PR body |
