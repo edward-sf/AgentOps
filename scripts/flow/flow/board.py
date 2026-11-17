@@ -6,7 +6,6 @@ from typing import Any
 from flow import gh
 from flow.config import OWNER, PROJECT_NUMBER, REPO
 
-
 STATUS_LIMIT = 500
 
 
