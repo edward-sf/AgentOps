@@ -27,13 +27,20 @@ class Trace(UUIDPrimaryKey, Base):
 
     otel_trace_id: Mapped[str] = mapped_column(Text, nullable=False)
     agent_version_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agent_versions.id", ondelete="RESTRICT"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("agent_versions.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     evaluation_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("evaluation_runs.id", ondelete="RESTRICT")
+        UUID(as_uuid=True),
+        ForeignKey("evaluation_runs.id", ondelete="RESTRICT"),
+        index=True,
     )
     test_case_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("test_cases.id", ondelete="RESTRICT")
+        UUID(as_uuid=True),
+        ForeignKey("test_cases.id", ondelete="RESTRICT"),
+        index=True,
     )
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="running")
     input: Mapped[str | None] = mapped_column(Text)
@@ -58,7 +65,9 @@ class Span(UUIDPrimaryKey, Base):
     )
     otel_span_id: Mapped[str] = mapped_column(Text, nullable=False)
     parent_span_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("spans.id", ondelete="CASCADE")
+        UUID(as_uuid=True),
+        ForeignKey("spans.id", ondelete="CASCADE"),
+        index=True,
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False, server_default="other")
@@ -77,10 +86,15 @@ class Metric(UUIDPrimaryKey, Base):
     __tablename__ = "metrics"
 
     trace_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("traces.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("traces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     span_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("spans.id", ondelete="CASCADE")
+        UUID(as_uuid=True),
+        ForeignKey("spans.id", ondelete="CASCADE"),
+        index=True,
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     value: Mapped[Decimal] = mapped_column(Numeric, nullable=False)

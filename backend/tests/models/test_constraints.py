@@ -1,7 +1,7 @@
 import uuid
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -76,7 +76,7 @@ async def test_agent_version_unique_per_agent(db_session: AsyncSession) -> None:
 
 async def test_provider_check_rejects_unknown(db_session: AsyncSession) -> None:
     agent = await make_agent(db_session)
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="ck_agent_versions_provider"):
         async with db_session.begin_nested():
             db_session.add(
                 AgentVersion(
@@ -106,7 +106,7 @@ async def test_deleting_version_referenced_by_run_is_restricted(
     ds = await make_dataset(db_session)
     db_session.add(EvaluationRun(agent_version_id=version.id, dataset_id=ds.id))
     await db_session.flush()
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="fk_evaluation_runs_agent_version_id_agent_versions"):
         async with db_session.begin_nested():
             await db_session.execute(delete(Agent).where(Agent.id == agent.id))
 
@@ -123,7 +123,7 @@ async def test_deleting_test_case_referenced_by_result_is_restricted(
     await db_session.flush()
     db_session.add(EvaluationResult(evaluation_run_id=run.id, test_case_id=case.id, passed=True))
     await db_session.flush()
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="fk_evaluation_results_test_case_id_test_cases"):
         async with db_session.begin_nested():
             await db_session.execute(delete(TestCase).where(TestCase.id == case.id))
 
@@ -153,3 +153,158 @@ async def test_test_case_key_unique_per_dataset(db_session: AsyncSession) -> Non
     with pytest.raises(IntegrityError, match="uq_test_cases_dataset_id_key"):
         async with db_session.begin_nested():
             await make_case(db_session, ds1)
+
+
+async def test_deleting_dataset_cascades_test_cases(db_session: AsyncSession) -> None:
+    ds = await make_dataset(db_session)
+    await make_case(db_session, ds)
+    assert await count(db_session, TestCase) == 1
+    await db_session.execute(delete(Dataset).where(Dataset.id == ds.id))
+    assert await count(db_session, TestCase) == 0
+
+
+async def test_deleting_test_case_referenced_by_trace_is_restricted(
+    db_session: AsyncSession,
+) -> None:
+    agent = await make_agent(db_session)
+    version = await make_version(db_session, agent)
+    ds = await make_dataset(db_session)
+    case = await make_case(db_session, ds)
+    db_session.add(Trace(otel_trace_id=uid(), agent_version_id=version.id, test_case_id=case.id))
+    await db_session.flush()
+    with pytest.raises(IntegrityError, match="fk_traces_test_case_id_test_cases"):
+        async with db_session.begin_nested():
+            await db_session.execute(delete(TestCase).where(TestCase.id == case.id))
+
+
+async def test_span_kind_check_rejects_unknown(db_session: AsyncSession) -> None:
+    agent = await make_agent(db_session)
+    version = await make_version(db_session, agent)
+    trace = Trace(otel_trace_id=uid(), agent_version_id=version.id)
+    db_session.add(trace)
+    await db_session.flush()
+    with pytest.raises(IntegrityError, match="ck_spans_kind"):
+        async with db_session.begin_nested():
+            db_session.add(Span(trace_id=trace.id, otel_span_id="s1", name="n", kind="bogus"))
+            await db_session.flush()
+
+
+async def test_trace_status_check_rejects_unknown(db_session: AsyncSession) -> None:
+    agent = await make_agent(db_session)
+    version = await make_version(db_session, agent)
+    with pytest.raises(IntegrityError, match="ck_traces_status"):
+        async with db_session.begin_nested():
+            db_session.add(
+                Trace(otel_trace_id=uid(), agent_version_id=version.id, status="cancelled")
+            )
+            await db_session.flush()
+
+
+async def test_run_status_check_rejects_unknown(db_session: AsyncSession) -> None:
+    agent = await make_agent(db_session)
+    version = await make_version(db_session, agent)
+    ds = await make_dataset(db_session)
+    with pytest.raises(IntegrityError, match="ck_evaluation_runs_status"):
+        async with db_session.begin_nested():
+            db_session.add(
+                EvaluationRun(agent_version_id=version.id, dataset_id=ds.id, status="bogus")
+            )
+            await db_session.flush()
+
+
+async def test_updated_at_is_advanced_by_database_trigger(db_session: AsyncSession) -> None:
+    agent = await make_agent(db_session)
+    before = (
+        await db_session.execute(select(Agent.updated_at).where(Agent.id == agent.id))
+    ).scalar_one()
+    await db_session.execute(
+        update(Agent).where(Agent.id == agent.id).values(description="changed")
+    )
+    after = (
+        await db_session.execute(select(Agent.updated_at).where(Agent.id == agent.id))
+    ).scalar_one()
+    assert after > before
+
+
+@pytest.mark.parametrize(
+    ("table", "column", "referred", "ondelete"),
+    [
+        ("agent_versions", "agent_id", "agents", "c"),
+        ("test_cases", "dataset_id", "datasets", "c"),
+        ("evaluation_runs", "agent_version_id", "agent_versions", "r"),
+        ("evaluation_runs", "dataset_id", "datasets", "r"),
+        ("traces", "agent_version_id", "agent_versions", "r"),
+        ("traces", "evaluation_run_id", "evaluation_runs", "r"),
+        ("traces", "test_case_id", "test_cases", "r"),
+        ("spans", "trace_id", "traces", "c"),
+        ("spans", "parent_span_id", "spans", "c"),
+        ("evaluation_results", "evaluation_run_id", "evaluation_runs", "r"),
+        ("evaluation_results", "test_case_id", "test_cases", "r"),
+        ("evaluation_results", "trace_id", "traces", "r"),
+        ("metrics", "trace_id", "traces", "c"),
+        ("metrics", "span_id", "spans", "c"),
+    ],
+)
+async def test_foreign_key_delete_rule(
+    db_session: AsyncSession, table: str, column: str, referred: str, ondelete: str
+) -> None:
+    rows = (
+        await db_session.execute(
+            text(
+                """
+                SELECT c.confdeltype, c.conname, rt.relname
+                FROM pg_constraint c
+                JOIN pg_class t ON t.oid = c.conrelid
+                JOIN pg_class rt ON rt.oid = c.confrelid
+                JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+                WHERE c.contype = 'f' AND t.relname = :table AND a.attname = :column
+                """
+            ),
+            {"table": table, "column": column},
+        )
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].confdeltype == ondelete
+    assert rows[0].relname == referred
+    assert rows[0].conname == f"fk_{table}_{column}_{referred}"
+
+
+async def test_no_unexpected_foreign_keys(db_session: AsyncSession) -> None:
+    n = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM pg_constraint "
+                "WHERE contype = 'f' AND connamespace = 'public'::regnamespace"
+            )
+        )
+    ).scalar_one()
+    assert n == 14
+
+
+async def test_exact_check_and_unique_constraint_names(db_session: AsyncSession) -> None:
+    async def names(kind: str) -> set[str]:
+        res = await db_session.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE contype = :k AND connamespace = 'public'::regnamespace"
+            ),
+            {"k": kind},
+        )
+        return {r[0] for r in res}
+
+    assert await names("c") == {
+        "ck_agent_versions_provider",
+        "ck_evaluation_runs_status",
+        "ck_traces_status",
+        "ck_spans_kind",
+        "ck_spans_status",
+    }
+    assert await names("u") == {
+        "uq_agents_name",
+        "uq_agent_versions_agent_id_version",
+        "uq_datasets_name",
+        "uq_test_cases_dataset_id_key",
+        "uq_evaluation_results_run_case",
+        "uq_traces_otel_trace_id",
+        "uq_spans_trace_id_otel_span_id",
+    }

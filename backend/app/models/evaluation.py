@@ -27,10 +27,16 @@ class EvaluationRun(UUIDPrimaryKey, Base):
     )
 
     agent_version_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agent_versions.id", ondelete="RESTRICT"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("agent_versions.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     dataset_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("datasets.id", ondelete="RESTRICT"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("datasets.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
     error: Mapped[str | None] = mapped_column(Text)
@@ -53,10 +59,15 @@ class EvaluationResult(UUIDPrimaryKey, Base):
         UUID(as_uuid=True), ForeignKey("evaluation_runs.id", ondelete="RESTRICT"), nullable=False
     )
     test_case_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("test_cases.id", ondelete="RESTRICT"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("test_cases.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     trace_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("traces.id", ondelete="RESTRICT")
+        UUID(as_uuid=True),
+        ForeignKey("traces.id", ondelete="RESTRICT"),
+        index=True,
     )
     passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     score: Mapped[float | None] = mapped_column(Float)

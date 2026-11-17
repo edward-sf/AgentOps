@@ -313,9 +313,42 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_metrics")),
     )
 
+    for table, column in [
+        ("evaluation_runs", "agent_version_id"),
+        ("evaluation_runs", "dataset_id"),
+        ("traces", "agent_version_id"),
+        ("traces", "evaluation_run_id"),
+        ("traces", "test_case_id"),
+        ("spans", "parent_span_id"),
+        ("evaluation_results", "test_case_id"),
+        ("evaluation_results", "trace_id"),
+        ("metrics", "trace_id"),
+        ("metrics", "span_id"),
+    ]:
+        op.create_index(op.f(f"ix_{table}_{column}"), table, [column])
+
+    op.execute(
+        """
+        CREATE FUNCTION set_updated_at() RETURNS trigger AS $$
+        BEGIN
+            NEW.updated_at = clock_timestamp();
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+        """
+    )
+    for table in ("agents", "datasets", "test_cases"):
+        op.execute(
+            f"CREATE TRIGGER trg_{table}_set_updated_at BEFORE UPDATE ON {table} "
+            "FOR EACH ROW EXECUTE FUNCTION set_updated_at()"
+        )
+
 
 def downgrade() -> None:
     """Downgrade schema."""
+    for table in ("agents", "datasets", "test_cases"):
+        op.execute(f"DROP TRIGGER trg_{table}_set_updated_at ON {table}")
+    op.execute("DROP FUNCTION set_updated_at()")
     op.drop_table("metrics")
     op.drop_table("spans")
     op.drop_table("evaluation_results")
