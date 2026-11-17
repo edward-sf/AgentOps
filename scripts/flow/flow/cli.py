@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from flow import board, gh
+from flow import board, gh, milestone
 from flow.config import APPROVED_LABEL, AUTHOR, CHECKPOINT_LABEL, OWNER, REPO
 from flow.guard import MERGED_STATUSES, DepState, PrState, merge_blockers, start_blockers
 from flow.plan import Task, find_plan, parse_plan, task_id_from_title
@@ -419,6 +419,32 @@ def cmd_issue_merge(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_milestone_start(args: argparse.Namespace) -> int:
+    root = repo_root()
+    plan_path = find_plan(args.milestone, root)
+    rel = plan_path.relative_to(root).as_posix()
+    base = f"https://github.com/{OWNER}/{REPO}/blob/milestone/m{args.milestone}/{rel}"
+    template = (root / ".github/PULL_REQUEST_TEMPLATE/milestone.md").read_text()
+    lines = milestone.milestone_start(
+        args.milestone,
+        parse_plan(plan_path.read_text()),
+        lambda t: f"{base}#{milestone.anchor(f'{t.id} {t.title}')}",
+        dry_run=args.dry_run,
+        pr_template=template,
+    )
+    print("\n".join(lines))
+    return 0
+
+
+def cmd_milestone_pr(args: argparse.Namespace) -> int:
+    try:
+        lines = milestone.milestone_pr(args.milestone, dry_run=args.dry_run)
+    except ValueError as e:
+        raise Refusal([f"milestone PR body: {e}"]) from e
+    print("\n".join(lines))
+    return 0
+
+
 # ---------- entry point ----------
 
 
@@ -460,6 +486,14 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("issue-merge", help="squash-merge if the guard allows")
     s.add_argument("pr", type=int)
     s.set_defaults(fn=cmd_issue_merge)
+    s = sub.add_parser("milestone-start", help="create/update milestone issues, branch and PR")
+    s.add_argument("milestone", type=int)
+    s.add_argument("--dry-run", action="store_true", help="print actions; write nothing")
+    s.set_defaults(fn=cmd_milestone_start)
+    s = sub.add_parser("milestone-pr", help="roll merged issue PRs into the milestone PR body")
+    s.add_argument("milestone", type=int)
+    s.add_argument("--dry-run", action="store_true", help="print the new body; don't edit the PR")
+    s.set_defaults(fn=cmd_milestone_pr)
     return p
 
 
