@@ -1,4 +1,4 @@
-.PHONY: setup db dev-api dev-web dev test lint typecheck fmt check down
+.PHONY: setup db migrate dev-api dev-web dev test lint typecheck fmt check down
 
 setup:
 	cd backend && uv sync
@@ -6,6 +6,9 @@ setup:
 
 db:
 	docker compose up -d --wait db
+
+migrate:
+	cd backend && uv run alembic upgrade head
 
 dev-api:
 	cd backend && uv run uvicorn app.main:app --reload --port 8000
