@@ -55,3 +55,17 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  flow:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts/flow
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run mypy
+      - run: uv run pytest

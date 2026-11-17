@@ -304,7 +304,7 @@ def test_start_blocked_by_unmerged_or_unapproved_dependency():
   - `issue-pr <n> "<title>" [--notes FILE]`: pushes the branch and runs `gh pr create --base milestone/m<N>` with a body from `.github/PULL_REQUEST_TEMPLATE/issue.md`, filling in `Part of #n`, the plan link and the notes. Then `set_status(n, "In review")`.
   - `pr-gate <pr>`: `gh pr checks <pr> --watch --interval 20`. If a check fails, print each failing check's name, then `gh run view <run-id> --log-failed | tail -n 60`.
   - `review-context <pr>`: prints the sections `## Task <id>` (the plan section body), `## Acceptance criteria`, `## Head <sha>` and `## Diff` (`gh pr diff`).
-  - `post-verdict <pr> PASS|FAIL <file>`: reads the head SHA (`gh pr view --json headRefOid`), then `gh pr comment --body <format_verdict(...)>`.
+  - `post-verdict <pr> PASS|FAIL <file> --sha <reviewed-sha>`: takes the reviewed SHA (printed by `review-context`). It reads the current head (`gh pr view --json headRefOid`), refuses with `✗ head moved: reviewed <sha7>, current <sha7>` if they differ, then runs `gh pr comment --body <format_verdict(...)>` with the given SHA.
   - `issue-merge <pr>`: builds `PrState`. CI is `success` only if every check is in the `pass` or `skipping` bucket, and `missing` if there are no checks. The checkpoint and approval flags come from the linked issue's labels. If there are no blockers, it runs `gh pr merge <pr> --squash --subject "<PR title>" --delete-branch` and `set_status(issue, "Merged to milestone")`.
 
   The issue number is parsed from `Part of #<n>` in the PR body.
