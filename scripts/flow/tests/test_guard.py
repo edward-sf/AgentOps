@@ -67,3 +67,13 @@ def test_start_allows_done_case_insensitively_and_blocks_unknown() -> None:
     assert start_blockers([DepState("M0.T1", "merged to milestone", False, False)]) == []
     assert start_blockers([DepState("M0.T1", None, False, False)]) != []
     assert start_blockers([]) == []
+
+
+def test_issue_must_itself_be_ready() -> None:
+    from flow.guard import own_blockers
+
+    assert own_blockers(20, "Ready") == []
+    assert own_blockers(20, "ready") == []
+    assert own_blockers(20, "In progress") == ["issue #20 is In progress, not Ready"]
+    assert own_blockers(20, "Merged to milestone") != []
+    assert own_blockers(20, None) == ["issue #20 is unknown, not Ready"]

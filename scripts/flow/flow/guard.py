@@ -53,3 +53,10 @@ def start_blockers(deps: list[DepState]) -> list[str]:
         elif dep.checkpoint and not dep.approved:
             blockers.append(f"{dep.task_id} is a checkpoint without approval")
     return blockers
+
+
+def own_blockers(number: int, status: str | None) -> list[str]:
+    """The issue itself must be Ready before it can be started."""
+    if (status or "").lower() == "ready":
+        return []
+    return [f"issue #{number} is {status or 'unknown'}, not Ready"]
