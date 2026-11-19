@@ -77,3 +77,37 @@ def test_issue_must_itself_be_ready() -> None:
     assert own_blockers(20, "In progress") == ["issue #20 is In progress, not Ready"]
     assert own_blockers(20, "Merged to milestone") != []
     assert own_blockers(20, None) == ["issue #20 is unknown, not Ready"]
+
+
+def _job(name: str, bucket: str = "pass") -> dict[str, Any]:
+    return {"name": name, "bucket": bucket, "workflow": "ci"}
+
+
+def test_missing_required_job_blocks() -> None:
+    from flow.guard import ci_status
+
+    checks = [_job(n) for n in ("backend", "frontend", "flow", "contracts")]
+    assert ci_status(checks) == (False, ["docker"])
+
+
+def test_all_required_jobs_green() -> None:
+    from flow.config import REQUIRED_CI_JOBS
+    from flow.guard import ci_status
+
+    assert REQUIRED_CI_JOBS == ("backend", "frontend", "flow", "contracts", "docker")
+    assert ci_status([_job(n) for n in REQUIRED_CI_JOBS]) == (True, [])
+
+
+def test_failing_pending_or_foreign_jobs_are_not_green() -> None:
+    from flow.config import REQUIRED_CI_JOBS
+    from flow.guard import ci_status
+
+    jobs = [_job(n) for n in REQUIRED_CI_JOBS]
+    assert ci_status([*jobs[:4], _job("docker", "fail")]) == (False, ["docker"])
+    assert ci_status([*jobs[:4], _job("docker", "pending")]) == (False, ["docker"])
+    # a same-named job from another workflow does not count
+    other = {"name": "docker", "bucket": "pass", "workflow": "release"}
+    assert ci_status([*jobs[:4], other]) == (False, ["docker"])
+    # an extra failing check also blocks, and is named
+    assert ci_status([*jobs, _job("lint-extra", "fail")]) == (False, ["lint-extra"])
+    assert ci_status([]) == (False, list(REQUIRED_CI_JOBS))
