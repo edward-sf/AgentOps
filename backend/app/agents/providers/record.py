@@ -39,7 +39,7 @@ FIXTURES_DIR = Path(__file__).resolve().parents[3] / "tests" / "agents" / "fixtu
 MODEL = "claude-sonnet-5-5"
 SYSTEM_PROMPT = "You are a helpful assistant. Use the get_weather tool to answer weather questions."
 PARAMS: dict[str, Any] = {"max_tokens": 1024}
-"""The seeded version's parameters, minus `temperature`: API version 2026-10-21 rejects it."""
+"""The seeded `weather-bot` version 1 parameters."""
 
 WEATHER_TOOL = ToolSpec(
     name="get_weather",

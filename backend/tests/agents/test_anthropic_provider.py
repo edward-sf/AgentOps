@@ -173,7 +173,7 @@ async def test_request_mapping(tracer_provider: TracerProvider) -> None:
             ),
         ],
         tools=[WEATHER_TOOL],
-        params={"max_tokens": 512, "temperature": 0, "top_p": 0.9, "top_k": 5},
+        params={"max_tokens": 512},
     )
 
     await complete_in_span(provider, request, tracer_provider)
@@ -183,9 +183,7 @@ async def test_request_mapping(tracer_provider: TracerProvider) -> None:
     assert sent["model"] == "claude-sonnet-5-5"
     assert sent["system"] == "You are a weather assistant."
     assert sent["max_tokens"] == 512
-    assert sent["temperature"] == 0
-    assert sent["top_p"] == 0.9
-    assert sent["top_k"] == 5
+    assert set(sent) == {"model", "system", "max_tokens", "messages", "tools"}
     assert sent["tools"] == [
         {
             "name": "get_weather",
@@ -225,6 +223,16 @@ async def test_request_mapping(tracer_provider: TracerProvider) -> None:
             ],
         },
     ]
+
+
+@pytest.mark.parametrize("key", ["temperature", "top_p", "top_k", "max_steps", "stop_sequences"])
+async def test_unsupported_param_raises(key: str, tracer_provider: TracerProvider) -> None:
+    """Only `max_tokens` reaches the SDK (D8); validate_parameters filters keys upstream."""
+    captured: list[dict[str, Any]] = []
+    provider = AnthropicProvider(replay_client("final_answer", requests=captured))
+    with pytest.raises(ValueError, match=key):
+        await complete_in_span(provider, seattle_request(**{key: 0}), tracer_provider)
+    assert captured == []
 
 
 async def test_request_without_tools_omits_tools(tracer_provider: TracerProvider) -> None:

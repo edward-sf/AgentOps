@@ -33,7 +33,7 @@
   - `end_turn`, `stop_sequence` and `refusal` → `completed`.
   - `max_tokens` → `failed`, "answer truncated at max_tokens".
   - Anything else → `failed`, "unexpected stop reason: <reason>".
-- `max_steps` counts model calls, default **10**. The allowed parameter keys are exactly `max_steps`, `max_tokens`, `temperature`, `top_p` and `top_k` (D8).
+- `max_steps` counts model calls, default **10**. The allowed parameter keys are exactly `max_steps` and `max_tokens` (D8).
 - An agent failure is data: `POST /api/v1/runs` returns **201** with `status: "failed"`. 404, 422 and 503 are only for configuration errors, and they create no trace (spec 6.2).
 - LangChain model wrappers and third-party OTel instrumentors are not used (D6).
 
@@ -283,7 +283,7 @@
       - Matching is case-insensitive.
       - A missing `location` raises `ValueError`.
   - `app/agents/config.py`:
-    - `ALLOWED_PARAMETERS = {"max_steps", "max_tokens", "temperature", "top_p", "top_k"}` and `DEFAULT_MAX_STEPS = 10`.
+    - `ALLOWED_PARAMETERS = {"max_steps", "max_tokens"}` and `DEFAULT_MAX_STEPS = 10`.
     - `RunParams(max_steps: int, model_params: dict[str, Any])`
     - `validate_parameters(parameters: dict[str, Any]) -> RunParams`, which raises `InvalidParametersError(message)`. If `max_tokens` is missing, `model_params` defaults it to 1024, because the Anthropic API requires it.
     - `AgentConfig(agent_version_id: UUID, provider: str, model: str, system_prompt: str, params: RunParams, tools: list[Tool])`
@@ -335,7 +335,8 @@
     - `get_tools(["nope"])` raises `UnknownToolError`
   - `test_config.py`:
     - `validate_parameters({})` gives `max_steps == 10` and `model_params == {"max_tokens": 1024}`
-    - `{"max_steps": 3, "temperature": 0}` gives `model_params == {"temperature": 0, "max_tokens": 1024}`
+    - `{"max_steps": 3, "max_tokens": 512}` gives `model_params == {"max_tokens": 512}`
+    - `{"temperature": 0}` raises `InvalidParametersError` matching `temperature`
     - `{"temprature": 0}` raises `InvalidParametersError` matching `temprature`
     - `{"max_steps": 0}` and `{"max_steps": "5"}` raise
 - [ ] **Step 2: Write the failing runtime tests** in `test_runtime.py`, using `db_session`, `make_agent_version` and `ScriptedProvider`. Each test reads the stored rows back with `select`.

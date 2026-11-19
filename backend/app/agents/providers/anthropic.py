@@ -74,21 +74,22 @@ def _turn_to_message(turn: Turn) -> dict[str, Any]:
 
 
 SDK_PARAMS = frozenset({"max_tokens"})
-"""Parameters that `messages.create` takes as keyword arguments in the locked SDK.
+"""The only `ModelRequest.params` keys allowed (D8).
 
-anthropic 2.x has no `temperature`, `top_p` or `top_k` arguments: API version 2026-10-21, which it
-sends, rejects them with a 400. Other parameters are still passed through, in `extra_body`, so the
-API decides and a rejected parameter surfaces as a `ProviderAPIError`, never silently dropped.
+anthropic 2.11 / API version 2026-10-21 no longer accepts `temperature`, `top_p` or `top_k`.
 """
 
 
 def to_anthropic_kwargs(request: ModelRequest) -> dict[str, Any]:
-    """Map a `ModelRequest` to `messages.create` keyword arguments."""
-    kwargs: dict[str, Any] = {"max_tokens": DEFAULT_MAX_TOKENS}
-    extra_body = {k: v for k, v in request.params.items() if k not in SDK_PARAMS}
-    kwargs.update({k: v for k, v in request.params.items() if k in SDK_PARAMS})
-    if extra_body:
-        kwargs["extra_body"] = extra_body
+    """Map a `ModelRequest` to `messages.create` keyword arguments.
+
+    Raises `ValueError` for a parameter other than `max_tokens`: that is a programming error,
+    because the runtime validates version parameters before building a request.
+    """
+    unsupported = sorted(set(request.params) - SDK_PARAMS)
+    if unsupported:
+        raise ValueError(f"unsupported model parameter(s): {', '.join(unsupported)}")
+    kwargs: dict[str, Any] = {"max_tokens": DEFAULT_MAX_TOKENS, **request.params}
     kwargs["model"] = request.model
     kwargs["messages"] = [_turn_to_message(turn) for turn in request.turns]
     if request.system:
