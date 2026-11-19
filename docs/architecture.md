@@ -179,6 +179,8 @@ All routes live under `/api/v1`, except health.
 | `GET`, `POST /api/v1/datasets/{id}/test-cases` | List and create test cases. |
 | `POST /api/v1/datasets/{id}/test-cases:bulk` | Create 1 to 1000 test cases. All-or-nothing: a duplicate key in the request or against existing cases returns `409` and inserts nothing. |
 | `GET`, `PATCH`, `DELETE /api/v1/datasets/{id}/test-cases/{case_id}` | Read, update and delete a test case. |
+| `GET /api/v1/traces` | List traces, newest first. Filters: `agent_version_id`, `status` (`running`, `completed` or `failed`). |
+| `GET /api/v1/traces/{id}` | Read a trace and its spans as a tree: `spans` holds the root spans, each with nested `children` ordered by `started_at`. A span whose parent isn't in the trace is returned as a root. |
 
 Conventions:
 
