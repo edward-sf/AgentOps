@@ -22,14 +22,6 @@ _UNIQUE_MESSAGES = {
     "uq_test_cases_dataset_id_key": "Test case key already exists in this dataset",
 }
 
-# Referenced-table name -> entity shown in the message.
-_REFERENCED_ENTITIES = {
-    "agents": "Agent",
-    "agent_versions": "Agent version",
-    "datasets": "Dataset",
-    "test_cases": "Test case",
-}
-
 
 def _constraint_name(exc: IntegrityError) -> str | None:
     diag = getattr(exc.orig, "diag", None)
@@ -41,17 +33,28 @@ def _constraint_name(exc: IntegrityError) -> str | None:
     return name if isinstance(name, str) else None
 
 
-def integrity_conflict(exc: IntegrityError, entity: str | None = None) -> ConflictError:
-    """Translate a database IntegrityError into a 409 with a stable message.
+def integrity_conflict(exc: IntegrityError) -> ConflictError:
+    """Translate a unique violation from an insert or update into a 409.
 
-    `entity` names what was being deleted, used when a foreign key blocks the delete.
+    Any other violation (an unknown constraint, or a foreign key at insert time) is a bug or
+    a missing precondition check, not a client conflict, so it is re-raised unchanged.
     """
     name = _constraint_name(exc)
     if name in _UNIQUE_MESSAGES:
         return ConflictError(_UNIQUE_MESSAGES[name])
+    raise exc
+
+
+def delete_conflict(exc: IntegrityError, entity: str) -> ConflictError:
+    """Translate an IntegrityError raised by a DELETE into a 409.
+
+    A foreign key violation on a delete means evaluation history still references the row.
+    `entity` is shown in the message. Anything else is re-raised unchanged.
+    """
+    name = _constraint_name(exc)
     if name is not None and name.startswith("fk_"):
-        return ConflictError(f"{entity or 'Record'} is referenced by evaluation history")
-    return ConflictError("Conflict with existing data")
+        return ConflictError(f"{entity} is referenced by evaluation history")
+    raise exc
 
 
 def register_error_handlers(app: FastAPI) -> None:

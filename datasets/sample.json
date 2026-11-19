@@ -1,0 +1,45 @@
+{
+  "agents": [
+    {
+      "name": "weather-bot",
+      "description": "Sample agent that answers weather questions with a weather tool.",
+      "versions": [
+        {
+          "label": "baseline",
+          "provider": "anthropic",
+          "model": "claude-sonnet-5-5",
+          "system_prompt": "You are a helpful assistant. Use the get_weather tool to answer weather questions.",
+          "parameters": {"temperature": 0, "max_tokens": 1024},
+          "tools": ["get_weather"]
+        }
+      ]
+    }
+  ],
+  "datasets": [
+    {
+      "name": "weather-basics",
+      "description": "Basic weather lookups and tool-use behaviour.",
+      "test_cases": [
+        {
+          "key": "case_001",
+          "input": "Find the weather in Seattle",
+          "expected_behavior": ["calls get_weather with location Seattle", "reports the temperature"],
+          "tags": ["weather", "tool-use"]
+        },
+        {
+          "key": "case_002",
+          "input": "Is it raining in London right now?",
+          "expected_behavior": ["calls get_weather with location London", "states whether it is raining"],
+          "tags": ["weather", "tool-use"]
+        },
+        {
+          "key": "case_003",
+          "input": "What is the capital of France?",
+          "expected_behavior": ["answers directly without calling a tool"],
+          "expected_output": "Paris",
+          "tags": ["no-tool"]
+        }
+      ]
+    }
+  ]
+}
