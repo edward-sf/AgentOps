@@ -4,6 +4,7 @@ import asyncio
 import json
 import uuid
 from collections import Counter
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -489,16 +490,40 @@ def test_run_outcome_shape() -> None:
 # --- no third-party tracing (D6) ------------------------------------------------------------
 
 
-async def test_langsmith_tracing_env_does_not_attach_a_tracer(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """LangSmith env vars must never switch on LangChain tracing of a run's data."""
-    import langsmith
-    from langchain_core.tracers.langchain import LangChainTracer
+def _clear_langsmith_env_caches() -> None:
+    """langsmith 0.15 memoizes env lookups; `tracing_is_enabled` reads them via `get_env_var`."""
+    from langsmith import utils as ls_utils
 
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_project.cache_clear()
+
+
+@pytest.fixture
+def langsmith_tracing_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """LangSmith tracing switched on by env, as a deployment might have it, for one test.
+
+    The caches are cleared after `setenv`, so this test sees the variables whatever ran
+    before it, and again at teardown, so a cached "true" never leaks into later tests.
+    """
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "http://127.0.0.1:9")
+    _clear_langsmith_env_caches()
+    yield
+    monkeypatch.undo()
+    _clear_langsmith_env_caches()
+
+
+@pytest.mark.usefixtures("langsmith_tracing_env")
+async def test_langsmith_tracing_env_does_not_attach_a_tracer(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LangSmith env vars must never switch on LangChain tracing of a run's data (D6)."""
+    import langsmith
+    from langchain_core.tracers.langchain import LangChainTracer
+    from langsmith import utils as ls_utils
+
+    assert ls_utils.tracing_is_enabled() is True  # the env really is on for this test
     tracers: list[object] = []
     clients: list[object] = []
     tracer_init = LangChainTracer.__init__
