@@ -76,7 +76,7 @@ M0.T1 and M0.T2 follow the issue lifecycle by hand, with the same gate and verdi
     - `cors_origins: list[str] = ["http://localhost:3000"]`
   - `app.config.get_settings() -> Settings`, `lru_cache`d.
   - `app.main.create_app(settings: Settings | None = None) -> FastAPI`. Its lifespan creates `app.state.engine` (`AsyncEngine`) and `app.state.sessionmaker` (`async_sessionmaker[AsyncSession]`, `expire_on_commit=False`), and disposes the engine on shutdown. It also creates the module-level `app = create_app()`.
-  - `app.db.get_session(request: Request) -> AsyncIterator[AsyncSession]`: yields a session, commits on success, and rolls back on exception.
+  - `app.db.get_session(request: Request) -> AsyncIterator[AsyncSession]`: yields a session, commits on success (before the response is sent, via the function-scoped `SessionDep` alias in `app/api/deps.py`), and rolls back on exception.
   - Test fixtures in `tests/conftest.py`:
     - `settings` (a `Settings` whose `database_url` is the test DB URL)
     - `app` (`create_app(settings)`, run with its lifespan)
@@ -542,7 +542,7 @@ def test_start_blocked_by_unmerged_or_unapproved_dependency():
     - `get_version(session, agent_id, version: int) -> AgentVersion`
     - `get_agent_by_name(session, name) -> Agent | None`
 
-    Writes that can conflict run inside `async with session.begin_nested():` and convert `IntegrityError` with `integrity_conflict`. Services `flush`; `get_session` commits.
+    Writes that can conflict run inside `async with session.begin_nested():` and convert `IntegrityError` with `integrity_conflict`. Services `flush`; `get_session` (function-scoped via `SessionDep`) commits before the response is sent.
   - `create_version` locks the agent row (`select(Agent).where(...).with_for_update()`), then uses `coalesce(max(version), 0) + 1`.
 
 - [ ] **Step 1: Write the failing API tests** (`test_agents.py`):
