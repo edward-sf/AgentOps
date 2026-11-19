@@ -9,6 +9,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Literal
 
+from langsmith import tracing_context
 from opentelemetry.trace import Status, StatusCode
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,10 +46,13 @@ async def run_agent(
                     attr.INPUT: json.dumps(input),
                 }
             )
-            state = await graph.ainvoke(
-                initial_state(input),
-                config={"recursion_limit": recursion_limit(config.params.max_steps)},
-            )
+            # D6: our spans are the only instrumentation. LangSmith env vars
+            # (LANGSMITH_TRACING, LANGCHAIN_TRACING_V2) must never send run data anywhere.
+            with tracing_context(enabled=False):
+                state = await graph.ainvoke(
+                    initial_state(input),
+                    config={"recursion_limit": recursion_limit(config.params.max_steps)},
+                )
             failure = state["failure"]
             if failure is not None:
                 root.set_attribute(attr.ERROR, failure)

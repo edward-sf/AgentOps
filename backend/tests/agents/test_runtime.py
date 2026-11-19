@@ -484,3 +484,39 @@ async def test_replayed_empty_max_tokens_fails(db_session: AsyncSession) -> None
 def test_run_outcome_shape() -> None:
     outcome = RunOutcome(trace_id=uuid.uuid4(), status="completed")
     assert outcome.status == "completed"
+
+
+# --- no third-party tracing (D6) ------------------------------------------------------------
+
+
+async def test_langsmith_tracing_env_does_not_attach_a_tracer(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LangSmith env vars must never switch on LangChain tracing of a run's data."""
+    import langsmith
+    from langchain_core.tracers.langchain import LangChainTracer
+
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+    monkeypatch.setenv("LANGSMITH_ENDPOINT", "http://127.0.0.1:9")
+    tracers: list[object] = []
+    clients: list[object] = []
+    tracer_init = LangChainTracer.__init__
+    client_init = langsmith.Client.__init__
+
+    def record_tracer(self: LangChainTracer, *args: Any, **kwargs: Any) -> None:
+        tracers.append(self)
+        tracer_init(self, *args, **kwargs)
+
+    def record_client(self: langsmith.Client, *args: Any, **kwargs: Any) -> None:
+        clients.append(self)
+        client_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(LangChainTracer, "__init__", record_tracer)
+    monkeypatch.setattr(langsmith.Client, "__init__", record_client)
+
+    outcome, _, _ = await run(db_session, ScriptedProvider([tool_use(), end_turn()]))
+
+    assert outcome.status == "completed"
+    assert tracers == []
+    assert clients == []
