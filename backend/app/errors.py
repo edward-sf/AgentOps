@@ -15,6 +15,22 @@ class ConflictError(Exception):
         self.detail = detail
 
 
+class UnprocessableError(Exception):
+    """A request that is well-formed but can't be acted on, such as an unrunnable version."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+class ServiceUnavailableError(Exception):
+    """The server isn't configured for this request, such as a missing API key."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
 _UNIQUE_MESSAGES = {
     "uq_agents_name": "Agent name already exists",
     "uq_agent_versions_agent_id_version": "Agent version already exists",
@@ -66,5 +82,15 @@ def register_error_handlers(app: FastAPI) -> None:
         assert isinstance(exc, ConflictError)
         return JSONResponse({"detail": exc.detail}, status_code=409)
 
+    async def unprocessable(_: Request, exc: Exception) -> JSONResponse:
+        assert isinstance(exc, UnprocessableError)
+        return JSONResponse({"detail": exc.detail}, status_code=422)
+
+    async def unavailable(_: Request, exc: Exception) -> JSONResponse:
+        assert isinstance(exc, ServiceUnavailableError)
+        return JSONResponse({"detail": exc.detail}, status_code=503)
+
     app.add_exception_handler(NotFoundError, not_found)
     app.add_exception_handler(ConflictError, conflict)
+    app.add_exception_handler(UnprocessableError, unprocessable)
+    app.add_exception_handler(ServiceUnavailableError, unavailable)

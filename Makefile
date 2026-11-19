@@ -1,4 +1,4 @@
-.PHONY: api-types setup db migrate seed dev-api dev-web dev test lint typecheck fmt check up down record
+.PHONY: api-types setup db migrate seed dev-api dev-web dev test lint typecheck fmt check up down record smoke
 
 setup:
 	cd backend && uv sync
@@ -16,6 +16,10 @@ seed:
 # Author only: calls the real Anthropic API (costs money, needs ANTHROPIC_API_KEY).
 record:
 	cd backend && uv run python -m app.agents.providers.record
+
+# Manual: one real agent run (2 model calls) of the seeded weather-bot; needs ANTHROPIC_API_KEY.
+smoke:
+	cd backend && uv run python -m app.smoke
 
 dev-api:
 	cd backend && uv run uvicorn app.main:app --reload --port 8000
