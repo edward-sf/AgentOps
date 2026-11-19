@@ -179,13 +179,26 @@ All routes live under `/api/v1`, except health.
 | `GET`, `POST /api/v1/datasets/{id}/test-cases` | List and create test cases. |
 | `POST /api/v1/datasets/{id}/test-cases:bulk` | Create 1 to 1000 test cases. All-or-nothing: a duplicate key in the request or against existing cases returns `409` and inserts nothing. |
 | `GET`, `PATCH`, `DELETE /api/v1/datasets/{id}/test-cases/{case_id}` | Read, update and delete a test case. |
+| `POST /api/v1/runs` | Body `{agent_version_id, input}`. Runs the version synchronously and returns `201 {trace_id, status}`, where `status` is `completed` or `failed`. A failed run is still `201`; the trace says why. `404` unknown version; `422` unknown tool, unsupported provider or invalid parameters; `503` `ANTHROPIC_API_KEY` not set. These errors create no trace. |
 | `GET /api/v1/traces` | List traces, newest first. Filters: `agent_version_id`, `status` (`running`, `completed` or `failed`). |
 | `GET /api/v1/traces/{id}` | Read a trace and its spans as a tree: `spans` holds the root spans, each with nested `children` ordered by `started_at`. A span whose parent isn't in the trace is returned as a root. |
 
 Conventions:
 
 - Lists take `limit` (default 50, max 200) and `offset`, and return `{items, total, limit, offset}`.
-- Errors use `{"detail": ...}`: `404` not found, `409` uniqueness or referential conflict, `422` validation.
+- Errors use `{"detail": ...}`: `404` not found, `409` uniqueness or referential conflict, `422` validation, `503` server not configured (runs only).
+
+## Agent runs
+
+`POST /api/v1/runs` runs one input through an AgentVersion and blocks until its trace is stored (M1 runs are synchronous):
+
+1. The service loads the AgentVersion and checks it can run: its tools exist in the registry, its provider is `anthropic`, and its `parameters` use only `max_steps` and `max_tokens`. It then builds the provider, which needs `ANTHROPIC_API_KEY`. Any failure here is a `404`, `422` or `503`, and nothing is written.
+2. The read transaction is committed, so no transaction is open while the model is called.
+3. The runtime opens a root `chain` span and runs the tool-calling graph. Each model call is an `llm` span (with token counts and finish reason); each tool call is a `tool` span. `max_steps` (default 10) caps the number of model calls.
+4. The run ends with an answer, at the step limit, or on an error (provider error, unparseable response, tool exception). Errors mark the span and the trace `failed`, with the cause in `error`.
+5. The finished spans go to `ingest_spans`, which writes the Trace and Span rows in the request's transaction. The endpoint returns `201 {trace_id, status}`.
+
+`make smoke` exercises this path against the real API (see the README).
 
 ## Sample data
 

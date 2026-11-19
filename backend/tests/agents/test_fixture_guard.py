@@ -88,3 +88,9 @@ def test_every_scenario_has_a_fixture() -> None:
         }
     for name in CONSTRUCTED_SCENARIOS:
         assert fixtures[name]["source"] == "constructed"
+
+
+def test_recordable_fixtures_are_recorded() -> None:
+    fixtures = load_all()
+    not_recorded = [s for s in RECORDABLE_SCENARIOS if fixtures[s]["source"] != "recorded"]
+    assert not not_recorded, f"run 'make record' (author only): {not_recorded} are not recorded"

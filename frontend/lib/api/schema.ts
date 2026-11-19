@@ -167,6 +167,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Run
+         * @description Run an AgentVersion synchronously. A failed run is still 201, with `status: failed`.
+         */
+        post: operations["create_run_api_v1_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/traces": {
         parameters: {
             query?: never;
@@ -407,6 +427,29 @@ export interface components {
             offset: number;
             /** Total */
             total: number;
+        };
+        /** RunCreate */
+        RunCreate: {
+            /**
+             * Agent Version Id
+             * Format: uuid
+             */
+            agent_version_id: string;
+            /** Input */
+            input: string;
+        };
+        /** RunRead */
+        RunRead: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "completed" | "failed";
+            /**
+             * Trace Id
+             * Format: uuid
+             */
+            trace_id: string;
         };
         /** SpanNode */
         SpanNode: {
@@ -1210,6 +1253,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TestCaseRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_run_api_v1_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunRead"];
                 };
             };
             /** @description Validation Error */
