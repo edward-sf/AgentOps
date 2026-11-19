@@ -134,11 +134,11 @@ All nine entities get tables in M0. Fields marked *(later)* are present but unus
 | **Metric** | id, trace_id, span_id (nullable), name (`latency_ms`, `input_tokens`, `output_tokens`, `cost_usd`, …), value (numeric), unit, recorded_at | *(M6)* A narrow table, so new metrics need no migration. |
 
 **Deletion (my call: history is never silently destroyed):**
-- Foreign keys from historical records use `ON DELETE RESTRICT`. That covers EvaluationRun, Trace, EvaluationResult, and Metric, whether they point to AgentVersion, TestCase, Dataset, or one another.
+- Foreign keys from historical records use `ON DELETE RESTRICT`. That covers EvaluationRun, Trace, and EvaluationResult, whether they point to AgentVersion, TestCase, Dataset, or one another.
 - Deleting an Agent or a Dataset is refused with `409` if any of its versions or test cases is referenced by a historical record. Otherwise it cascades to its versions or test cases (`ON DELETE CASCADE` from Agent to AgentVersion and from Dataset to TestCase).
 - `DELETE …/test-cases/{case_id}` is refused with `409` if any Trace or EvaluationResult references the case.
 - AgentVersions cannot be deleted on their own in M0.
-- Span and Metric rows cascade from their Trace. A Trace itself is protected by the rules above.
+- Span and Metric rows cascade from their Trace, and Metric rows also from their Span. A Trace itself is protected by the rules above.
 
 **Enums:** stored as `text` with `CHECK` constraints, not native Postgres enums, so adding a value is a simple migration.
 

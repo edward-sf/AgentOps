@@ -5,7 +5,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Agent, AgentVersion, EvaluationResult, EvaluationRun
+from app.models import Agent, AgentVersion, EvaluationResult, EvaluationRun, Trace
 
 DS = "/api/v1/datasets"
 
@@ -222,3 +222,30 @@ async def test_openapi_documents_dataset_endpoints(client: AsyncClient) -> None:
     assert set(paths[f"{DS}/{{dataset_id}}/test-cases"]) == {"get", "post"}
     assert set(paths[f"{DS}/{{dataset_id}}/test-cases:bulk"]) == {"post"}
     assert set(paths[f"{DS}/{{dataset_id}}/test-cases/{{case_id}}"]) == {"get", "patch", "delete"}
+
+
+async def test_bulk_over_1000_items_is_422(client: AsyncClient, dataset: dict[str, Any]) -> None:
+    items = [{"key": f"c{i}", "input": "q"} for i in range(1001)]
+    r = await client.post(f"{DS}/{dataset['id']}/test-cases:bulk", json=items)
+    assert r.status_code == 422
+
+
+async def test_delete_case_referenced_only_by_trace_is_409(
+    client: AsyncClient, db_session: AsyncSession, dataset: dict[str, Any]
+) -> None:
+    base = f"{DS}/{dataset['id']}/test-cases"
+    case = (await client.post(base, json={"key": "k", "input": "q"})).json()
+    agent = Agent(name="trace-agent")
+    db_session.add(agent)
+    await db_session.flush()
+    version = AgentVersion(
+        agent_id=agent.id, version=1, provider="anthropic", model="m", system_prompt="p"
+    )
+    db_session.add(version)
+    await db_session.flush()
+    db_session.add(Trace(otel_trace_id="t-1", agent_version_id=version.id, test_case_id=case["id"]))
+    await db_session.flush()
+    r = await client.delete(f"{base}/{case['id']}")
+    assert r.status_code == 409
+    assert r.json() == {"detail": "Test case is referenced by evaluation history"}
+    assert (await client.get(f"{base}/{case['id']}")).status_code == 200

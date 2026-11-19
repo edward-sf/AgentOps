@@ -148,7 +148,7 @@ History is never silently destroyed.
 | Agent → AgentVersion | `CASCADE` | Deleting an agent deletes its versions. |
 | Dataset → TestCase | `CASCADE` | Deleting a dataset deletes its test cases. |
 | Trace → Span, Trace → Metric, Span → Metric, Span → parent Span | `CASCADE` | Removed together with the trace. |
-| EvaluationRun, Trace, EvaluationResult, Metric → their targets (AgentVersion, Dataset, TestCase, EvaluationRun, Trace) | `RESTRICT` | The target cannot be deleted while a historical record points at it. |
+| EvaluationRun, Trace, EvaluationResult → their targets (AgentVersion, Dataset, TestCase, EvaluationRun, Trace) | `RESTRICT` | The target cannot be deleted while a historical record points at it. |
 
 In practice, the API returns `409` when:
 

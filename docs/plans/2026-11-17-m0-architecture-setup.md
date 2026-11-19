@@ -21,7 +21,7 @@
 - Lists take `limit` (default **50**, min 1, max **200**) and `offset` (min 0), and return `{items, total, limit, offset}`.
 - Errors use the shape `{"detail": ...}`: **404** not found, **409** uniqueness or referential conflict, **422** validation.
 - AgentVersions are immutable. They have no update endpoint and can't be deleted on their own.
-- Foreign keys from historical records (EvaluationRun, Trace, EvaluationResult, Metric) to their targets use `ON DELETE RESTRICT`. Agent→AgentVersion and Dataset→TestCase use `CASCADE`. Span and Metric rows cascade from their Trace.
+- Foreign keys from historical records (EvaluationRun, Trace, EvaluationResult) to their targets use `ON DELETE RESTRICT`. Agent→AgentVersion and Dataset→TestCase use `CASCADE`. Span and Metric rows cascade from their Trace (and Metric from its Span).
 - The verdict comment's first line is exactly `Review verdict: PASS @ <40-char head SHA>` (or `FAIL`).
 - The GitHub workflow is named `ci`. Issue branches are named `<issue-number>-<short-slug>`.
 - Tests run against real Postgres. Don't use SQLite or mock the database.
