@@ -775,3 +775,18 @@ async def test_delete_dataset_cascades_unreferenced_cases(client, dataset): ...
    - [ ] It connects to PostgreSQL
    - [ ] It supports initial agent and dataset records
 3. Mark the PR ready for review and notify the author.
+
+---
+
+### M0.T10 Final review fixes
+
+**Depends on:** M0.T1, M0.T2, M0.T3, M0.T4, M0.T5, M0.T6, M0.T7, M0.T8, M0.T9
+
+**Goal:** Address the final whole-branch review's Important findings and its fix-now minors before the milestone PR goes to the author.
+
+**Acceptance criteria**
+- [ ] Writes commit before the response is sent: `get_session` is function-scoped through one shared dependency alias, and a test using the real `get_session` (no override) sees a POSTed row from a fresh session immediately after the response.
+- [ ] `./flow milestone-start <N>` creates `milestone/m<N>` with a start commit whose tree is `origin/main` plus the milestone plan (and roadmap), so issue plan links resolve and `issue-start` branches contain the plan; tested with fake git.
+- [ ] `issue-start` refuses unless the issue itself is `Ready` (case-insensitive), matching AGENTS.md and spec §11.1; tested.
+- [ ] README has a "Getting started" section (prerequisites; `make setup db migrate seed dev`; `make up`; `make check`; links to CONTRIBUTING, AGENTS, architecture) and labels the repo tree as the target layout.
+- [ ] Docs consistent: orchestrate skill says one Implementer at a time; PR templates current; spec §9 lists the `flow` job and spec status is Approved; CONTRIBUTING re-review wording says the Orchestrator posts; `post-verdict --help` says "at the reviewed head".
