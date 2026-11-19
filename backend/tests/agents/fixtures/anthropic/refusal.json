@@ -1,0 +1,29 @@
+{
+  "scenario": "refusal",
+  "source": "constructed",
+  "sdk_version": "2.11.0",
+  "model": "claude-sonnet-5-5",
+  "recorded_at": "2026-11-19T00:00:00Z",
+  "status_code": 200,
+  "body": {
+    "id": "msg_01ConstructedRefusal",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-sonnet-5-5",
+    "content": [],
+    "stop_reason": "refusal",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 412,
+      "output_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "service_tier": "standard"
+    },
+    "stop_details": {
+      "type": "refusal",
+      "category": null,
+      "explanation": null
+    }
+  }
+}

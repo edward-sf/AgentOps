@@ -80,7 +80,8 @@ M1 builds that primitive. AgentOps runs an agent built with LangGraph on one inp
    - Any other stop reason (for example `pause_turn`, which only server tools produce and M1 doesn't use): `failed` as unexpected, per decision 3.
 8. **`max_steps` counts model calls** (Claude's call, 2026-11-19), not LangGraph node executions. A final answer on the last allowed call is a success. Asking for another call after that fails the trace with "step limit reached (N model calls)". Because AgentVersions are immutable, this meaning is a data contract.
    - `max_steps` is removed before parameters go to the SDK.
-   - Allowed parameter keys are `max_steps`, `max_tokens`, `temperature`, `top_p` and `top_k`. `POST /api/v1/runs` returns 422 for a version with any other key, so a typo never silently changes behaviour.
+   - Allowed parameter keys are exactly `max_steps` and `max_tokens`. `POST /api/v1/runs` returns 422 for a version with any other key, so a typo never silently changes behaviour.
+   - `temperature`, `top_p` and `top_k` were dropped (author decision, 2026-11-19) because Anthropic SDK 2.11.0 / API version 2026-10-21 no longer accepts them; a version that still has one gets a 422 naming the key, so nothing changes behaviour silently.
 9. **Retries are ours and visible** (Claude's call, 2026-11-19).
    - The SDK's built-in retries are off (`max_retries=0`).
    - The adapter retries transient errors (429, 5xx, overloaded) up to 2 times with backoff, inside the same `llm` span. Each failed attempt is recorded as a span event with its error. The span records the attempt count (`agentops.llm.attempts`).
