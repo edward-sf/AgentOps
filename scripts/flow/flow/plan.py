@@ -1,8 +1,10 @@
 """Parse a milestone plan into tasks."""
 
+import fnmatch
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 _HEADING = re.compile(r"^### (M(\d+)\.T(\d+)) (.+?)\s*$")
 _TASK_ID = re.compile(r"^(M\d+\.T\d+)\b")
@@ -34,6 +36,21 @@ def find_plan(milestone: int, root: Path) -> Path:
             f"expected exactly one docs/plans/*-m{milestone}-*.md, found {len(matches)}"
         )
     return matches[0]
+
+
+def read_plan_at(milestone: int, ref: str, git: Callable[[list[str]], str]) -> tuple[str, str]:
+    """(repo path, text) of the milestone plan as committed at `ref`, e.g. origin/milestone/m1.
+
+    `git` runs a git subcommand and returns its stdout.
+    """
+    names = git(["ls-tree", "--full-tree", "--name-only", ref, "docs/plans/"]).splitlines()
+    pattern = f"*-m{milestone}-*.md"
+    matches = [n for n in names if fnmatch.fnmatch(PurePosixPath(n).name, pattern)]
+    if len(matches) != 1:
+        raise FileNotFoundError(
+            f"expected exactly one docs/plans/{pattern} at {ref}, found {len(matches)}"
+        )
+    return matches[0], git(["show", f"{ref}:{matches[0]}"])
 
 
 def _unfenced(lines: list[str]) -> list[tuple[str, bool]]:

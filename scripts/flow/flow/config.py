@@ -7,3 +7,5 @@ AUTHOR = "edward-sf"
 STATUSES = ("Future", "Ready", "In progress", "In review", "Merged to milestone", "Done")
 CHECKPOINT_LABEL = "checkpoint"
 APPROVED_LABEL = "checkpoint-approved"
+CI_WORKFLOW = "ci"
+REQUIRED_CI_JOBS = ("backend", "frontend", "flow", "contracts", "docker")

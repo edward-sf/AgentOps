@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from flow import board, cli, gh
+from flow.config import REQUIRED_CI_JOBS
 from flow.verdict import format_verdict
 
 SHA = "a" * 40
@@ -28,7 +29,9 @@ class FakeGh:
             ],
         }
         self.pr.update(pr_overrides)
-        self.checks_out = json.dumps([{"name": "ci", "bucket": "pass", "link": ""}])
+        self.checks_out = json.dumps(
+            [{"name": n, "bucket": "pass", "link": "", "workflow": "ci"} for n in REQUIRED_CI_JOBS]
+        )
         self.merge_error: gh.GhError | None = None
         self.state_after_merge = "MERGED"
         self.calls: list[list[str]] = []
@@ -62,8 +65,13 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeGh:
     f = FakeGh()
     monkeypatch.setattr(gh, "run", f.run)
     monkeypatch.setattr(gh, "json", f.json)
-    monkeypatch.setattr(cli, "load_plan", lambda m: [])
-    monkeypatch.setattr(board, "set_status", lambda n, s: f.calls.append(["board", str(n), s]))
+    monkeypatch.setattr(cli, "load_plan", lambda m, base=None: [])
+
+    def set_status(n: int, s: str) -> bool:
+        f.calls.append(["board", str(n), s])
+        return True
+
+    monkeypatch.setattr(board, "set_status", set_status)
     return f
 
 

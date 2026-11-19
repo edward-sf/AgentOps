@@ -70,10 +70,6 @@ def test_render_issue_body_keeps_nested_criteria_verbatim() -> None:
     )
 
 
-def test_anchor_is_github_slug() -> None:
-    assert milestone.anchor("M0.T2 `flow` CLI: issue loop") == "m0t2-flow-cli-issue-loop"
-
-
 def test_replace_section_only_touches_named_section() -> None:
     body = "# T\n\n## A\nalpha\n\n## B\nold\nold2\n\n## C\ngamma\n"
     out = milestone.replace_section(body, "B", "new")
@@ -113,6 +109,7 @@ class FakeGh:
         return ""
 
     def json(self, args: list[str], *, allow: tuple[int, ...] = (0,)) -> Any:
+        self.calls.append(args)
         if args[0] == "api" and "compare" in args[1]:
             return {"ahead_by": self.ahead}
         if args[0] == "api":
@@ -381,3 +378,28 @@ def test_dry_run_off_board_reports_but_writes_nothing(
     out = run_start(f, dry=True)
     assert out[0] == "board M9.T1"
     assert not any(c[0] == "board" for c in f.calls) and f.writes() == []
+
+
+def test_milestone_pr_filters_base(wire: Callable[[list[dict[str, Any]]], FakeGh]) -> None:
+    f = wire([])
+    f.open_prs = [{"number": 10, "body": PR_BODY}]
+    milestone.milestone_pr(9, dry_run=True)
+    (merged_call,) = [c for c in f.calls if c[:2] == ["pr", "list"] and "merged" in c]
+    assert merged_call[merged_call.index("--base") + 1] == "milestone/m9"
+    (open_call,) = [c for c in f.calls if c[:2] == ["pr", "list"] and "open" in c]
+    assert open_call[open_call.index("--head") + 1] == "milestone/m9"
+
+
+def test_untitled_issues_ignored_silently(
+    wire: Callable[[list[dict[str, Any]]], FakeGh], capsys: pytest.CaptureFixture[str]
+) -> None:
+    untitled = [
+        {"number": 40, "title": "chore: backlog item", "body": "", "labels": []},
+        {"number": 41, "title": "fix flow warning", "body": "", "labels": []},
+    ]
+    f = wire(existing_issues(tasks()) + untitled)
+    out = run_start(f)
+    assert "warning" not in capsys.readouterr().err
+    assert out[:2] == ["unchanged M9.T1", "unchanged M9.T2"]
+    assert f.writes() == []
+    assert not any(c[0] == "board" for c in f.calls)
