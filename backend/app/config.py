@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://agentops:agentops@localhost:5432/agentops"
     test_database_url: str = "postgresql+psycopg://agentops:agentops@localhost:5432/agentops_test"
     cors_origins: list[str] = ["http://localhost:3000"]
+    anthropic_api_key: str | None = None
 
 
 @lru_cache
