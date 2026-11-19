@@ -1,4 +1,4 @@
-.PHONY: setup db migrate seed dev-api dev-web dev test lint typecheck fmt check down
+.PHONY: api-types setup db migrate seed dev-api dev-web dev test lint typecheck fmt check down
 
 setup:
 	cd backend && uv sync
@@ -42,3 +42,7 @@ check:
 
 down:
 	docker compose down
+
+api-types:
+	cd backend && uv run python -m app.export_openapi > ../frontend/lib/api/openapi.json
+	cd frontend && npx openapi-typescript lib/api/openapi.json -o lib/api/schema.ts
