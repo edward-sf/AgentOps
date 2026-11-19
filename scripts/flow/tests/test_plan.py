@@ -94,3 +94,37 @@ def test_find_plan_ignores_the_milestone_plan_template(tmp_path: Path) -> None:
     assert find_plan(1, tmp_path).name == "2026-m1-x.md"
     template = Path(__file__).parents[3] / "docs/plans/TEMPLATE-milestone-plan.md"
     assert template.exists() and parse_plan(template.read_text()) == []
+
+
+def test_plan_read_from_origin_base() -> None:
+    from flow.plan import read_plan_at
+
+    calls: list[list[str]] = []
+
+    def fake_git(args: list[str]) -> str:
+        calls.append(args)
+        if args[0] == "ls-tree":
+            return (
+                "docs/plans/2026-m8-other.md\ndocs/plans/2026-m9-x.md\n"
+                "docs/plans/TEMPLATE-milestone-plan.md\n"
+            )
+        if args[0] == "show":
+            return SAMPLE
+        raise AssertionError(args)
+
+    rel, text = read_plan_at(9, "origin/milestone/m9", fake_git)
+    assert rel == "docs/plans/2026-m9-x.md"
+    assert text == SAMPLE
+    assert calls[0][:2] == ["ls-tree", "--full-tree"]  # paths from the repo root, not the cwd
+    assert calls[-1] == ["show", "origin/milestone/m9:docs/plans/2026-m9-x.md"]
+    assert [t.id for t in parse_plan(text)] == ["M9.T1", "M9.T2", "M9.T3"]
+
+
+def test_read_plan_at_errors_unless_exactly_one() -> None:
+    from flow.plan import read_plan_at
+
+    with pytest.raises(FileNotFoundError):
+        read_plan_at(9, "origin/x", lambda a: "" if a[0] == "ls-tree" else "x")
+    two = "docs/plans/a-m9-x.md\ndocs/plans/b-m9-y.md\n"
+    with pytest.raises(FileNotFoundError):
+        read_plan_at(9, "origin/x", lambda a: two)

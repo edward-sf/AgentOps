@@ -134,10 +134,8 @@ async def test_deleting_trace_cascades_spans_and_metrics(db_session: AsyncSessio
     trace = Trace(otel_trace_id=uid(), agent_version_id=version.id)
     db_session.add(trace)
     await db_session.flush()
-    parent = Span(trace_id=trace.id, otel_span_id="s1", name="root", kind="chain")
-    db_session.add(parent)
-    await db_session.flush()
-    db_session.add(Span(trace_id=trace.id, otel_span_id="s2", parent_span_id=parent.id, name="c"))
+    db_session.add(Span(trace_id=trace.id, otel_span_id="s1", name="root", kind="chain"))
+    db_session.add(Span(trace_id=trace.id, otel_span_id="s2", parent_otel_span_id="s1", name="c"))
     db_session.add(Metric(trace_id=trace.id, name="latency_ms", value=12.5, unit="ms"))
     await db_session.flush()
     await db_session.execute(delete(Trace).where(Trace.id == trace.id))
@@ -237,7 +235,6 @@ async def test_updated_at_is_advanced_by_database_trigger(db_session: AsyncSessi
         ("traces", "evaluation_run_id", "evaluation_runs", "r"),
         ("traces", "test_case_id", "test_cases", "r"),
         ("spans", "trace_id", "traces", "c"),
-        ("spans", "parent_span_id", "spans", "c"),
         ("evaluation_results", "evaluation_run_id", "evaluation_runs", "r"),
         ("evaluation_results", "test_case_id", "test_cases", "r"),
         ("evaluation_results", "trace_id", "traces", "r"),
@@ -278,7 +275,7 @@ async def test_no_unexpected_foreign_keys(db_session: AsyncSession) -> None:
             )
         )
     ).scalar_one()
-    assert n == 14
+    assert n == 13
 
 
 async def test_exact_check_and_unique_constraint_names(db_session: AsyncSession) -> None:

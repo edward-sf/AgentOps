@@ -21,7 +21,8 @@ def _warn(message: str) -> None:
     print(f"warning: board: {message}", file=sys.stderr)
 
 
-def set_status(issue_number: int, status: str) -> None:
+def set_status(issue_number: int, status: str) -> bool:
+    """True when the status was set; False after a warning."""
     try:
         url = f"https://github.com/{OWNER}/{REPO}/issues/{issue_number}"
         project = str(PROJECT_NUMBER)
@@ -34,11 +35,11 @@ def set_status(issue_number: int, status: str) -> None:
         field = next((f for f in fields["fields"] if f.get("name") == "Status"), None)
         if field is None:
             _warn("project has no Status field; not updated")
-            return
+            return False
         option = find_option(field.get("options", []), status)
         if option is None:
             _warn(f"no Status option named '{status}'; #{issue_number} not updated")
-            return
+            return False
         gh.run(
             [
                 "project",
@@ -55,6 +56,8 @@ def set_status(issue_number: int, status: str) -> None:
         )
     except (gh.GhError, KeyError, TypeError) as e:
         _warn(f"could not set #{issue_number} to '{status}': {e}")
+        return False
+    return True
 
 
 def try_statuses() -> dict[int, str] | None:

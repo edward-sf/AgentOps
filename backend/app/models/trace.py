@@ -64,11 +64,9 @@ class Span(UUIDPrimaryKey, Base):
         UUID(as_uuid=True), ForeignKey("traces.id", ondelete="CASCADE"), nullable=False
     )
     otel_span_id: Mapped[str] = mapped_column(Text, nullable=False)
-    parent_span_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("spans.id", ondelete="CASCADE"),
-        index=True,
-    )
+    # The parent's otel_span_id, resolved within the same trace. No foreign key:
+    # OTel exports children before their parent (M1 spec, decision 1).
+    parent_otel_span_id: Mapped[str | None] = mapped_column(Text)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False, server_default="other")
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="unset")
@@ -76,6 +74,7 @@ class Span(UUIDPrimaryKey, Base):
     input: Mapped[Any | None] = mapped_column(JSONB)
     output: Mapped[Any | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
+    events: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, server_default="[]")
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -16,16 +16,19 @@ from flow.guard import (
     MERGED_STATUSES,
     DepState,
     PrState,
+    ci_status,
     merge_blockers,
     own_blockers,
     start_blockers,
 )
-from flow.plan import Task, find_plan, parse_plan, task_id_from_title
+from flow.plan import Task, find_plan, parse_plan, read_plan_at, task_id_from_title
 from flow.verdict import Result, format_verdict, latest_verdict_for
 
 Ci = Literal["success", "failure", "pending", "missing"]
 MERGED = "Merged to milestone"
 PR_FIELDS = "number,title,body,state,headRefName,headRefOid,baseRefName,comments"
+CHECKS_WAIT_SECONDS = 60
+CHECKS_POLL_SECONDS = 5
 
 
 class Refusal(Exception):
@@ -55,6 +58,14 @@ def slug_for(title: str, words: int = 5) -> str:
 
 def heading_anchor(heading: str) -> str:
     return re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-")
+
+
+def deviation_notes(text: str) -> str:
+    """Notes for the template's `## Deviations from plan` section, minus their own heading."""
+    lines = text.strip().splitlines()
+    if lines and re.match(r"^#{1,6}\s+deviations?\b", lines[0], re.IGNORECASE):
+        lines = lines[1:]
+    return "\n".join(lines).strip() or "None."
 
 
 def ci_from_buckets(buckets: list[str]) -> Ci:
@@ -110,8 +121,19 @@ def repo_root() -> Path:
     return Path(_sh(["git", "rev-parse", "--show-toplevel"]))
 
 
-def load_plan(milestone: int) -> list[Task]:
-    return parse_plan(find_plan(milestone, repo_root()).read_text())
+def _git(args: list[str]) -> str:
+    return _sh(["git", *args])
+
+
+def plan_at_origin(milestone: int, base: str | None = None) -> tuple[str, str]:
+    """(repo path, text) of the plan on origin/<base>, fetched first. Never the working tree."""
+    base = base or f"milestone/m{milestone}"
+    _git(["fetch", "origin", base])
+    return read_plan_at(milestone, f"origin/{base}", _git)
+
+
+def load_plan(milestone: int, base: str | None = None) -> list[Task]:
+    return parse_plan(plan_at_origin(milestone, base)[1])
 
 
 def task_for(task_id: str) -> Task | None:
@@ -142,7 +164,7 @@ def pr_view(pr: int) -> dict[str, Any]:
 
 def checks(pr: int) -> list[dict[str, Any]]:
     """Check runs on the PR head. `gh pr checks` exits 1 (failed) or 8 (pending) with JSON."""
-    out = gh.run(["pr", "checks", str(pr), "--json", "name,bucket,link"], allow=(0, 1, 8))
+    out = gh.run(["pr", "checks", str(pr), "--json", "name,bucket,link,workflow"], allow=(0, 1, 8))
     if not out.strip().startswith("["):  # e.g. "no checks reported"
         return []
     return cast(list[dict[str, Any]], _json.loads(out))
@@ -281,7 +303,7 @@ def cmd_issue_pr(args: argparse.Namespace) -> int:
     if task:
         link += "#" + heading_anchor(f"{task.id} {task.title}")
     summary = args.summary or "<!-- What this PR does, in a few sentences. -->"
-    notes = Path(args.notes).read_text().strip() if args.notes else "None."
+    notes = deviation_notes(Path(args.notes).read_text()) if args.notes else "None."
     template = (root / ".github/PULL_REQUEST_TEMPLATE/issue.md").read_text()
     body = (
         template.replace("{{issue}}", str(args.issue))
@@ -314,19 +336,31 @@ def cmd_issue_pr(args: argparse.Namespace) -> int:
     return 0
 
 
+def watch_checks(pr: int) -> int:
+    """Stream `gh pr checks --watch` to the terminal; return its exit code."""
+    return subprocess.run(["gh", "pr", "checks", str(pr), "--watch", "--interval", "20"]).returncode
+
+
+def missing_jobs(found: list[dict[str, Any]], bad: list[str]) -> list[str]:
+    names = {str(c.get("name")) for c in found}
+    return [job for job in bad if job not in names]
+
+
 def cmd_pr_gate(args: argparse.Namespace) -> int:
     pr = args.pr
-    for _ in range(18):  # checks can take a moment to register after a push
-        if checks(pr):
-            break
-        time.sleep(5)
-    else:
-        raise Refusal([f"no checks reported on PR #{pr}"])
-    rc = subprocess.run(["gh", "pr", "checks", str(pr), "--watch", "--interval", "20"]).returncode
+    deadline = time.monotonic() + CHECKS_WAIT_SECONDS
+    while not checks(pr):  # checks can take a moment to register after a push
+        if time.monotonic() >= deadline:
+            raise Refusal([f"no checks reported on PR #{pr} after {CHECKS_WAIT_SECONDS}s"])
+        time.sleep(CHECKS_POLL_SECONDS)
+    rc = watch_checks(pr)
     final = checks(pr)
-    if rc == 0 and ci_from_buckets([c["bucket"] for c in final]) == "success":
+    green, bad = ci_status(final)
+    if rc == 0 and green:
         print(f"✓ ci green on PR #{pr}")
         return 0
+    for job in missing_jobs(final, bad):
+        print(f"✗ missing ci job: {job}")
     failing = [c for c in final if c["bucket"] in ("fail", "cancel")]
     for c in failing:
         print(f"✗ failing check: {c['name']}")
@@ -340,8 +374,8 @@ def cmd_pr_gate(args: argparse.Namespace) -> int:
             except gh.GhError as e:
                 log = str(e)
             print("\n".join(log.splitlines()[-60:]))
-    if not failing:
-        print(f"✗ gate did not finish green (watch exit {rc})")
+    if not failing and not missing_jobs(final, bad):
+        print(f"✗ gate did not finish green (watch exit {rc}; not green: {', '.join(bad)})")
     return 1
 
 
@@ -351,7 +385,7 @@ def cmd_review_context(args: argparse.Namespace) -> int:
     if n is None:
         raise Refusal([f"PR #{args.pr} body has no 'Part of #<n>'"])
     _, task_id, milestone = issue_context(n)
-    task = next((t for t in load_plan(milestone) if t.id == task_id), None)
+    task = next((t for t in load_plan(milestone, pr["baseRefName"]) if t.id == task_id), None)
     if task is None:
         raise Refusal([f"{task_id} not found in the M{milestone} plan"])
     print(f"## Task {task.id}\n{task.body}\n")
@@ -387,17 +421,21 @@ def cmd_issue_merge(args: argparse.Namespace) -> int:
         raise Refusal([f"PR #{args.pr} body has no 'Part of #<n>'"])
     issue, task_id, milestone = issue_context(n)
     labels = label_names(issue)
-    task = next((t for t in load_plan(milestone) if t.id == task_id), None)
+    task = next((t for t in load_plan(milestone, pr["baseRefName"]) if t.id == task_id), None)
+    found = checks(args.pr)
+    green, bad = ci_status(found)
+    ci = ci_from_buckets([c["bucket"] for c in found])
     state = PrState(
         number=args.pr,
         head_sha=pr["headRefOid"],
         base=pr["baseRefName"],
-        ci=ci_from_buckets([c["bucket"] for c in checks(args.pr)]),
+        ci="success" if green else ("missing" if ci == "success" else ci),
         comments=author_comments(pr["comments"]),
         checkpoint=CHECKPOINT_LABEL in labels or bool(task and task.checkpoint),
         checkpoint_approved=APPROVED_LABEL in labels,
     )
     blockers = merge_blockers(state)
+    blockers += [f"missing ci job: {job}" for job in missing_jobs(found, bad)]
     if not str(pr["headRefName"]).startswith(f"{n}-"):
         blockers.append(f"branch does not match issue #{n}")
     if blockers:
@@ -421,25 +459,34 @@ def cmd_issue_merge(args: argparse.Namespace) -> int:
         if pr_view(args.pr)["state"] != "MERGED":
             raise
         print(f"warning: gh pr merge reported an error but the PR is merged: {e}", file=sys.stderr)
-    board.set_status(n, MERGED)
-    print(f"✓ merged PR #{args.pr} into {state.base}; #{n} -> {MERGED}")
+    if board.set_status(n, MERGED):
+        print(f"✓ merged PR #{args.pr} into {state.base}; #{n} -> {MERGED}")
+    else:
+        print(f"✓ merged PR #{args.pr} into {state.base}; board not updated for #{n} (see warning)")
     return 0
 
 
 def cmd_milestone_start(args: argparse.Namespace) -> int:
     root = repo_root()
-    plan_path = find_plan(args.milestone, root)
-    rel = plan_path.relative_to(root).as_posix()
-    base = f"https://github.com/{OWNER}/{REPO}/blob/milestone/m{args.milestone}/{rel}"
+    n = args.milestone
     template = (root / ".github/PULL_REQUEST_TEMPLATE/milestone.md").read_text()
-    start_files = {rel: plan_path}
-    for roadmap in sorted((root / "docs" / "plans").glob("*-roadmap.md")):
-        start_files[roadmap.relative_to(root).as_posix()] = roadmap
+    start_files: dict[str, Path] = {}
+    if milestone.remote_branch_exists(f"milestone/m{n}"):
+        rel, text = plan_at_origin(n)  # the committed plan, not local edits
+    else:  # the branch is created from the working tree's plan, roadmap and spec
+        plan_path = find_plan(n, root)
+        rel, text = plan_path.relative_to(root).as_posix(), plan_path.read_text()
+        start_files[rel] = plan_path
+        for roadmap in sorted((root / "docs" / "plans").glob("*-roadmap.md")):
+            start_files[roadmap.relative_to(root).as_posix()] = roadmap
+        for spec in sorted((root / "docs" / "specs").glob(f"*-m{n}-*.md")):
+            start_files[spec.relative_to(root).as_posix()] = spec
+    base = f"https://github.com/{OWNER}/{REPO}/blob/milestone/m{n}/{rel}"
     try:
         lines = milestone.milestone_start(
-            args.milestone,
-            parse_plan(plan_path.read_text()),
-            lambda t: f"{base}#{milestone.anchor(f'{t.id} {t.title}')}",
+            n,
+            parse_plan(text),
+            lambda t: f"{base}#{heading_anchor(f'{t.id} {t.title}')}",
             dry_run=args.dry_run,
             pr_template=template,
             start_files=start_files,

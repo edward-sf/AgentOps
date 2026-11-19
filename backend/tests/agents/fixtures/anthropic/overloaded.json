@@ -1,0 +1,15 @@
+{
+  "scenario": "overloaded",
+  "source": "constructed",
+  "sdk_version": "2.11.0",
+  "model": "claude-sonnet-5-5",
+  "recorded_at": "2026-11-19T00:00:00Z",
+  "status_code": 529,
+  "body": {
+    "type": "error",
+    "error": {
+      "type": "overloaded_error",
+      "message": "Overloaded"
+    }
+  }
+}

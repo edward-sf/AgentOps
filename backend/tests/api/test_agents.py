@@ -5,6 +5,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Dataset, EvaluationRun
+from tests.factories import make_agent_version
 
 VERSION_BODY = {"provider": "anthropic", "model": "claude-sonnet-5-5", "system_prompt": "p"}
 
@@ -95,12 +96,12 @@ async def test_delete_agent_cascades_versions(client: AsyncClient) -> None:
 async def test_delete_agent_with_history_is_409(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    agent_id = (await client.post("/api/v1/agents", json={"name": "hist"})).json()["id"]
-    version = (await client.post(f"/api/v1/agents/{agent_id}/versions", json=VERSION_BODY)).json()
+    version = await make_agent_version(db_session)
+    agent_id = str(version.agent_id)
     dataset = Dataset(name="hist-ds")
     db_session.add(dataset)
     await db_session.flush()
-    db_session.add(EvaluationRun(agent_version_id=version["id"], dataset_id=dataset.id))
+    db_session.add(EvaluationRun(agent_version_id=version.id, dataset_id=dataset.id))
     await db_session.flush()
 
     r = await client.delete(f"/api/v1/agents/{agent_id}")

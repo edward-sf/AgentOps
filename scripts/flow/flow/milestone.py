@@ -29,11 +29,6 @@ class MilestoneError(Exception):
 # ---------- pure rendering ----------
 
 
-def anchor(heading: str) -> str:
-    """GitHub's heading slug: lowercase, drop characters outside [a-z0-9 -], spaces to hyphens."""
-    return re.sub(r"[^a-z0-9 -]", "", heading.lower()).replace(" ", "-")
-
-
 def goal_of(task: Task) -> str:
     """The first paragraph after `**Goal:**` in the task body."""
     lines = task.body.splitlines()
@@ -222,9 +217,11 @@ def milestone_start(
             f"warning: issue list hit its limit of {ISSUE_LIMIT}; some may be missed",
             file=sys.stderr,
         )
-    existing: dict[str | None, dict[str, Any]] = {}
+    existing: dict[str, dict[str, Any]] = {}
     for i in listed:
         tid = task_id_from_title(str(i["title"]))
+        if tid is None:  # not a plan task (backlog, chores): not ours to manage
+            continue
         if tid in existing:
             print(
                 f"warning: {tid} matches issues #{existing[tid]['number']} and #{i['number']};"

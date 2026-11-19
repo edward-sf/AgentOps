@@ -1,0 +1,33 @@
+{
+  "scenario": "unknown_block",
+  "source": "constructed",
+  "sdk_version": "2.11.0",
+  "model": "claude-sonnet-5-5",
+  "recorded_at": "2026-11-19T00:00:00Z",
+  "status_code": 200,
+  "body": {
+    "id": "msg_01ConstructedUnknownBlock",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-sonnet-5-5",
+    "content": [
+      {
+        "type": "unknown_block_type",
+        "data": "not a block the adapter understands"
+      },
+      {
+        "type": "text",
+        "text": "Seattle is rainy."
+      }
+    ],
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 412,
+      "output_tokens": 12,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "service_tier": "standard"
+    }
+  }
+}
