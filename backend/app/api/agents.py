@@ -1,10 +1,8 @@
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Response
 
-from app.db import get_session
+from app.api.deps import SessionDep
 from app.schemas.agent import (
     AgentCreate,
     AgentRead,
@@ -17,16 +15,14 @@ from app.services import agents as svc
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
-Session = Annotated[AsyncSession, Depends(get_session)]
-
 
 @router.post("", status_code=201)
-async def create_agent(data: AgentCreate, session: Session) -> AgentRead:
+async def create_agent(data: AgentCreate, session: SessionDep) -> AgentRead:
     return AgentRead.model_validate(await svc.create_agent(session, data))
 
 
 @router.get("")
-async def list_agents(session: Session, page: PageParams) -> Page[AgentRead]:
+async def list_agents(session: SessionDep, page: PageParams) -> Page[AgentRead]:
     items, total = await svc.list_agents(session, page.limit, page.offset)
     return Page[AgentRead](
         items=[AgentRead.model_validate(i) for i in items],
@@ -37,31 +33,31 @@ async def list_agents(session: Session, page: PageParams) -> Page[AgentRead]:
 
 
 @router.get("/{agent_id}")
-async def get_agent(agent_id: uuid.UUID, session: Session) -> AgentRead:
+async def get_agent(agent_id: uuid.UUID, session: SessionDep) -> AgentRead:
     return AgentRead.model_validate(await svc.get_agent(session, agent_id))
 
 
 @router.patch("/{agent_id}")
-async def update_agent(agent_id: uuid.UUID, data: AgentUpdate, session: Session) -> AgentRead:
+async def update_agent(agent_id: uuid.UUID, data: AgentUpdate, session: SessionDep) -> AgentRead:
     return AgentRead.model_validate(await svc.update_agent(session, agent_id, data))
 
 
 @router.delete("/{agent_id}", status_code=204)
-async def delete_agent(agent_id: uuid.UUID, session: Session) -> Response:
+async def delete_agent(agent_id: uuid.UUID, session: SessionDep) -> Response:
     await svc.delete_agent(session, agent_id)
     return Response(status_code=204)
 
 
 @router.post("/{agent_id}/versions", status_code=201)
 async def create_version(
-    agent_id: uuid.UUID, data: AgentVersionCreate, session: Session
+    agent_id: uuid.UUID, data: AgentVersionCreate, session: SessionDep
 ) -> AgentVersionRead:
     return AgentVersionRead.model_validate(await svc.create_version(session, agent_id, data))
 
 
 @router.get("/{agent_id}/versions")
 async def list_versions(
-    agent_id: uuid.UUID, session: Session, page: PageParams
+    agent_id: uuid.UUID, session: SessionDep, page: PageParams
 ) -> Page[AgentVersionRead]:
     items, total = await svc.list_versions(session, agent_id, page.limit, page.offset)
     return Page[AgentVersionRead](
@@ -73,5 +69,5 @@ async def list_versions(
 
 
 @router.get("/{agent_id}/versions/{version}")
-async def get_version(agent_id: uuid.UUID, version: int, session: Session) -> AgentVersionRead:
+async def get_version(agent_id: uuid.UUID, version: int, session: SessionDep) -> AgentVersionRead:
     return AgentVersionRead.model_validate(await svc.get_version(session, agent_id, version))

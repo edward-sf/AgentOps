@@ -1,6 +1,7 @@
 """Issue-body rendering, PR-body section replacement, roll-up, and milestone-start."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -9,6 +10,10 @@ from flow import board, gh, milestone
 from flow.plan import Task, parse_plan
 
 PLAN_URL = "https://example.test/plan.md#m9t2-second-task"
+START_FILES = {
+    "docs/plans/2026-m9-x.md": Path("/repo/docs/plans/2026-m9-x.md"),
+    "docs/plans/2026-roadmap.md": Path("/repo/docs/plans/2026-roadmap.md"),
+}
 
 PLAN = """\
 ### M9.T1 First task
@@ -124,9 +129,13 @@ class FakeGh:
             return self.merged if "merged" in args else self.open_prs
         raise AssertionError(args)
 
-    def git(self, args: list[str]) -> str:
+    def git(self, args: list[str], env: Mapping[str, str] | None = None) -> str:
         self.git_calls.append(args)
-        return {"rev-parse": "treesha", "commit-tree": "commitsha"}.get(args[0], "")
+        if args[0] in ("read-tree", "update-index", "write-tree"):
+            assert env is not None and "GIT_INDEX_FILE" in env  # never the user's index
+        return {"hash-object": "blobsha", "write-tree": "treesha", "commit-tree": "commitsha"}.get(
+            args[0], ""
+        )
 
     def writes(self) -> list[list[str]]:
         return [
@@ -165,7 +174,12 @@ def wire(monkeypatch: pytest.MonkeyPatch) -> Callable[[list[dict[str, Any]]], Fa
 def run_start(f: FakeGh, dry: bool = False) -> list[str]:
     ts = tasks()
     return milestone.milestone_start(
-        9, ts, lambda t: f"{PLAN_URL}-{t.number}", dry_run=dry, pr_template="# M<N> — <name>\n"
+        9,
+        ts,
+        lambda t: f"{PLAN_URL}-{t.number}",
+        dry_run=dry,
+        pr_template="# M<N> — <name>\n",
+        start_files=START_FILES,
     )
 
 
@@ -210,8 +224,26 @@ def test_branch_missing_pushes_empty_commit_then_creates_pr(
     f.open_prs = []
     out = run_start(f)
     assert out[-2].startswith("branch create") and out[-1].startswith("pr create")
-    assert [c[0] for c in f.git_calls] == ["fetch", "rev-parse", "commit-tree", "push"]
-    assert f.git_calls[2] == [
+    assert [c[0] for c in f.git_calls] == [
+        "fetch",
+        "read-tree",
+        "hash-object",
+        "update-index",
+        "hash-object",
+        "update-index",
+        "write-tree",
+        "commit-tree",
+        "push",
+    ]
+    assert f.git_calls[1] == ["read-tree", "origin/main^{tree}"]
+    assert f.git_calls[3] == [
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        "100644,blobsha,docs/plans/2026-m9-x.md",
+    ]
+    assert f.git_calls[5][3].endswith(",docs/plans/2026-roadmap.md")
+    assert f.git_calls[7] == [
         "commit-tree",
         "treesha",
         "-p",
@@ -219,7 +251,7 @@ def test_branch_missing_pushes_empty_commit_then_creates_pr(
         "-m",
         "chore: start milestone m9",
     ]
-    assert f.git_calls[3] == ["push", "origin", "commitsha:refs/heads/milestone/m9"]
+    assert f.git_calls[8] == ["push", "origin", "commitsha:refs/heads/milestone/m9"]
     (create,) = [c for c in f.calls if c[:2] == ["pr", "create"]]
     assert "--draft" in create and "milestone/m9" in create
 

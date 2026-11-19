@@ -12,7 +12,14 @@ from typing import Any, Literal, cast
 
 from flow import board, gh, milestone
 from flow.config import APPROVED_LABEL, AUTHOR, CHECKPOINT_LABEL, OWNER, REPO
-from flow.guard import MERGED_STATUSES, DepState, PrState, merge_blockers, start_blockers
+from flow.guard import (
+    MERGED_STATUSES,
+    DepState,
+    PrState,
+    merge_blockers,
+    own_blockers,
+    start_blockers,
+)
 from flow.plan import Task, find_plan, parse_plan, task_id_from_title
 from flow.verdict import Result, format_verdict, latest_verdict_for
 
@@ -250,7 +257,7 @@ def cmd_issue_start(args: argparse.Namespace) -> int:
                 APPROVED_LABEL in labels,
             )
         )
-    blockers = start_blockers(deps)
+    blockers = own_blockers(args.issue, statuses.get(args.issue)) + start_blockers(deps)
     if blockers:
         raise Refusal(blockers)
     branch = f"{args.issue}-{slug_for(issue['title'])}"
@@ -425,6 +432,9 @@ def cmd_milestone_start(args: argparse.Namespace) -> int:
     rel = plan_path.relative_to(root).as_posix()
     base = f"https://github.com/{OWNER}/{REPO}/blob/milestone/m{args.milestone}/{rel}"
     template = (root / ".github/PULL_REQUEST_TEMPLATE/milestone.md").read_text()
+    start_files = {rel: plan_path}
+    for roadmap in sorted((root / "docs" / "plans").glob("*-roadmap.md")):
+        start_files[roadmap.relative_to(root).as_posix()] = roadmap
     try:
         lines = milestone.milestone_start(
             args.milestone,
@@ -432,6 +442,7 @@ def cmd_milestone_start(args: argparse.Namespace) -> int:
             lambda t: f"{base}#{milestone.anchor(f'{t.id} {t.title}')}",
             dry_run=args.dry_run,
             pr_template=template,
+            start_files=start_files,
         )
     except milestone.MilestoneError as e:
         raise Refusal([str(e)]) from e
@@ -478,7 +489,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("review-context", help="print task, criteria, head SHA and diff")
     s.add_argument("pr", type=int)
     s.set_defaults(fn=cmd_review_context)
-    s = sub.add_parser("post-verdict", help="comment a verdict at the current head")
+    s = sub.add_parser("post-verdict", help="comment a verdict at the reviewed head (--sha)")
     s.add_argument("pr", type=int)
     s.add_argument("result", type=str.upper, choices=["PASS", "FAIL"])
     s.add_argument("file", help="file with findings")

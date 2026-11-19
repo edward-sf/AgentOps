@@ -1,9 +1,12 @@
 """Milestone start (issues, branch, draft PR) and the milestone PR roll-up."""
 
+import os
 import re
 import subprocess
 import sys
-from collections.abc import Callable
+import tempfile
+from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any, cast
 
 from flow import board, gh
@@ -140,20 +143,33 @@ def remote_branch_exists(branch: str) -> bool:
     return True
 
 
-def git(args: list[str]) -> str:
-    proc = subprocess.run(["git", *args], capture_output=True, text=True)
+def git(args: list[str], env: Mapping[str, str] | None = None) -> str:
+    proc = subprocess.run(
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        env={**os.environ, **env} if env else None,
+    )
     if proc.returncode != 0:
         raise gh.GhError(f"git {' '.join(args[:2])} failed: {proc.stderr.strip()}")
     return proc.stdout.strip()
 
 
-def create_remote_branch(branch: str, message: str) -> None:
-    """Push origin/main plus one empty commit to `branch`, without touching the checkout.
+def create_remote_branch(branch: str, message: str, files: Mapping[str, Path]) -> None:
+    """Push one commit on origin/main to `branch`, without touching the checkout.
 
-    The empty commit gives the draft milestone PR something to differ by.
+    The commit's tree is origin/main's tree plus `files` (repo path -> local file), so the
+    milestone plan is on the branch and the draft PR has a real diff. Built with plumbing
+    and a temporary index, so the user's index and working tree are left alone.
     """
     git(["fetch", "origin", "main"])
-    tree = git(["rev-parse", "origin/main^{tree}"])
+    with tempfile.TemporaryDirectory() as tmp:
+        env = {"GIT_INDEX_FILE": str(Path(tmp) / "index")}
+        git(["read-tree", "origin/main^{tree}"], env)
+        for rel, local in files.items():
+            blob = git(["hash-object", "-w", str(local)])
+            git(["update-index", "--add", "--cacheinfo", f"100644,{blob},{rel}"], env)
+        tree = git(["write-tree"], env)
     sha = git(["commit-tree", tree, "-p", "origin/main", "-m", message])
     git(["push", "origin", f"{sha}:refs/heads/{branch}"])
 
@@ -190,6 +206,7 @@ def milestone_start(
     *,
     dry_run: bool,
     pr_template: str,
+    start_files: Mapping[str, Path],
 ) -> list[str]:
     ms_title = milestone_title(n)
     ms_name = re.sub(rf"^M{n}\s*[-—:]?\s*", "", ms_title)
@@ -251,9 +268,9 @@ def milestone_start(
     if branch_existed:
         lines.append(f"branch exists {branch}")
     else:
-        lines.append(f"branch create {branch} from origin/main (+ empty start commit)")
+        lines.append(f"branch create {branch} from origin/main (+ start commit with the plan)")
         if not dry_run:
-            create_remote_branch(branch, f"chore: start milestone m{n}")
+            create_remote_branch(branch, f"chore: start milestone m{n}", start_files)
     pr = _open_pr_number(branch)
     if pr is not None:
         lines.append(f"pr exists #{pr}")
