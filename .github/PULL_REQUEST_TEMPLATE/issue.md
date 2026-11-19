@@ -11,7 +11,7 @@ Part of #{{issue}}
 
 ## Definition of done
 - [ ] Tests added or updated, and they pass locally and in CI
-- [ ] `ruff check`, `ruff format --check`, `mypy`, `eslint`, etc. (Complete as tooling decisions are settled)
+- [ ] `make check` is green (see CONTRIBUTING, "Definition of done")
 - [ ] The issue's acceptance criteria are met
 - [ ] Spec, plan, or README updated if behavior or decisions changed
 - [ ] No raw or exported data committed (only test fixtures)

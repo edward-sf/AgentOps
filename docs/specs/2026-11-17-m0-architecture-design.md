@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-17
 - **Milestone:** [M0 - Architecture and project setup](https://github.com/edward-sf/AgentOps/milestone/1) (due 2026-11-20)
-- **Status:** Draft, awaiting author approval
+- **Status:** Approved
 
 ## 1. Intent
 
@@ -178,6 +178,7 @@ The workflow is named `ci`. It runs on `pull_request` to `main` and `milestone/*
 | `backend` | uv sync, then ruff check, ruff format --check, mypy, pytest (Postgres service container, `pgvector/pgvector:pg17`) |
 | `frontend` | npm ci, then eslint, tsc, vitest, next build |
 | `contracts` | Exports OpenAPI from the app and regenerates `schema.ts`. Fails on any diff. |
+| `flow` | In `scripts/flow`: uv sync, then ruff check, ruff format --check, mypy, pytest |
 | `docker` | Builds both Dockerfiles (no push) |
 
 The gate is "every job in `ci` green on the PR's head commit". Requiring it in branch protection is the author's call. The workflow gives it a stable name so it can be required.
@@ -216,7 +217,7 @@ The gate is "every job in `ci` green on the PR's head commit". Requiring it in b
 
 | Command | Does |
 | ------- | ---- |
-| `milestone-start <N>` | Reads `M<N>.T<n>` task headings from the milestone plan in `docs/plans/`. Creates or updates the matching issues (title, plan-section link, acceptance criteria, labels including `checkpoint`); re-running is safe. Adds them to the GitHub milestone and the project board, sets status `Ready`, and assigns the author. Creates and pushes `milestone/m<N>` if it's missing and opens the draft milestone PR. |
+| `milestone-start <N>` | Reads `M<N>.T<n>` task headings from the milestone plan in `docs/plans/`. Creates or updates the matching issues (title, plan-section link, acceptance criteria, labels including `checkpoint`); re-running is safe. Adds them to the GitHub milestone and the project board, sets status `Ready`, and assigns the author. Creates and pushes `milestone/m<N>` if it's missing and opens the draft milestone PR. The branch's start commit is `origin/main` plus the milestone plan (and the roadmap, if present), so the plan must exist locally first; this makes the plan links resolve and gives the draft PR a real diff. |
 | `status [N]` | One compact table per issue: board status, branch, PR, CI result on head, verdict on head. |
 | `issue-start <n>` | Fetches, branches `<n>-<slug>` from the up-to-date milestone branch, and sets the board status to `In progress`. Refuses if the issue isn't `Ready` or is blocked by an unapproved checkpoint. |
 | `issue-pr <n> "<conventional title>" [--notes FILE]` | Pushes and opens the PR into the milestone branch, with a body from the template, `Part of #n`, and deviation notes. Sets the board to `In review`. |

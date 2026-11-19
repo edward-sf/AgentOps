@@ -78,7 +78,7 @@ An issue PR is squash-merged into `milestone/m<N>` only with both records on its
 ### Rules
 
 - **SHA invalidation.** Any new push invalidates the gate and the verdict. Re-run `pr-gate`, then get a new review.
-- **FAIL loop.** A FAIL blocks the merge. The fix is pushed (the Implementer is resumed with the findings), the PR passes the gate again, and a scoped re-review of the fix diff posts a new verdict.
+- **FAIL loop.** A FAIL blocks the merge. The fix is pushed (the Implementer is resumed with the findings), the PR passes the gate again, and a scoped re-review of the fix diff returns a new verdict, which the Orchestrator posts.
 - **Minor findings** that a Reviewer defers are not fixed in the PR. They get backlog issues at milestone review (see "New work gets an issue" under Rules).
 - **Checkpoints.** A task marked `**Checkpoint**` in the plan needs the author's sign-off before any task that depends on it starts. Approval is the `checkpoint-approved` label on the checkpoint *issue*, applied **only by the author**. Agents never apply it. A GitHub review approval is impossible, because every PR is opened under the author's GitHub account and GitHub does not let authors approve their own PRs. At a checkpoint the Orchestrator posts the verdict plus a short "checkpoint review guide" comment listing the open decisions, notifies the author, and carries on with independent tasks.
 - **Board statuses** follow `Future → Ready → In progress → In review → Merged to milestone → Done`. `./flow` moves issues through them.

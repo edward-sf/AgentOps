@@ -10,12 +10,12 @@ You are the Orchestrator (see CONTRIBUTING.md, "Agent workflow"). For the genera
 ## Setup
 
 1. Confirm the milestone plan exists in `docs/plans/` in the task format of `TEMPLATE-milestone-plan.md`.
-2. `./flow milestone-start <N>` (use `--dry-run` first). It is safe to re-run.
+2. `./flow milestone-start <N>` (use `--dry-run` first). It is safe to re-run. The branch's start commit carries the plan (and roadmap) from your local checkout, so the plan file must exist locally first.
 3. `./flow status <N>` shows where every issue stands.
 
 ## The loop, per issue
 
-Pick the next `Ready` issue whose dependencies are merged (and approved, if they are checkpoints). Independent issues can run in parallel.
+Pick the next `Ready` issue whose dependencies are merged (and approved, if they are checkpoints). Run one Implementer at a time: implementers share one checkout and one test database.
 
 1. **Dispatch an Implementer.** The prompt must contain:
    - the issue number and the plan path and section (`### M<N>.T<n>`)
