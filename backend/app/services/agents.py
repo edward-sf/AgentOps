@@ -4,7 +4,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.errors import NotFoundError, integrity_conflict
+from app.errors import NotFoundError, delete_conflict, integrity_conflict
 from app.models import Agent, AgentVersion
 from app.schemas.agent import AgentCreate, AgentUpdate, AgentVersionCreate
 
@@ -63,7 +63,7 @@ async def delete_agent(session: AsyncSession, agent_id: uuid.UUID) -> None:
             # Core DELETE: the database cascades to versions, then RESTRICT guards history.
             await session.execute(delete(Agent).where(Agent.id == agent.id))
     except IntegrityError as exc:
-        raise integrity_conflict(exc, entity="Agent") from exc
+        raise delete_conflict(exc, "Agent") from exc
     session.expunge(agent)
 
 

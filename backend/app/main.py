@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.api import agents, health
+from app.api import agents, datasets, health
 from app.config import Settings, get_settings
 from app.errors import register_error_handlers
 
@@ -34,6 +34,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(agents.router)
+    app.include_router(datasets.router)
     return app
 
 

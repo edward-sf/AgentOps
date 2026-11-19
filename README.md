@@ -3,6 +3,10 @@
 
 An observability and evaluation platform that allows engineering teams to test, monitor, and debug AI agents before and after deployment.
 
+## Documentation
+
+- [Architecture](docs/architecture.md): system overview, data model (ERD), deletion rules and API.
+
 ## Repo Structure
 
 The codebase is designed around clear functional boundaries.
