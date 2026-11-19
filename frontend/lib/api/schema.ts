@@ -167,6 +167,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/traces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Traces */
+        get: operations["list_traces_api_v1_traces_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/traces/{trace_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Trace */
+        get: operations["get_trace_api_v1_traces__trace_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -363,6 +397,58 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** Page[TraceRead] */
+        Page_TraceRead_: {
+            /** Items */
+            items: components["schemas"]["TraceRead"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /** SpanNode */
+        SpanNode: {
+            /** Attributes */
+            attributes: {
+                [key: string]: unknown;
+            };
+            /** Children */
+            children?: components["schemas"]["SpanNode"][];
+            /** Ended At */
+            ended_at: string | null;
+            /** Error */
+            error: string | null;
+            /** Events */
+            events: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Input */
+            input: unknown | null;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Otel Span Id */
+            otel_span_id: string;
+            /** Output */
+            output: unknown | null;
+            /** Parent Otel Span Id */
+            parent_otel_span_id: string | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Status */
+            status: string;
+        };
         /** TestCaseCreate */
         TestCaseCreate: {
             /** Expected Behavior */
@@ -421,6 +507,76 @@ export interface components {
             key?: string | null;
             /** Tags */
             tags?: string[] | null;
+        };
+        /** TraceDetail */
+        TraceDetail: {
+            /**
+             * Agent Version Id
+             * Format: uuid
+             */
+            agent_version_id: string;
+            /** Ended At */
+            ended_at: string | null;
+            /** Error */
+            error: string | null;
+            /** Evaluation Run Id */
+            evaluation_run_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Input */
+            input: string | null;
+            /** Otel Trace Id */
+            otel_trace_id: string;
+            /** Output */
+            output: string | null;
+            /** Spans */
+            spans: components["schemas"]["SpanNode"][];
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Status */
+            status: string;
+            /** Test Case Id */
+            test_case_id: string | null;
+        };
+        /** TraceRead */
+        TraceRead: {
+            /**
+             * Agent Version Id
+             * Format: uuid
+             */
+            agent_version_id: string;
+            /** Ended At */
+            ended_at: string | null;
+            /** Error */
+            error: string | null;
+            /** Evaluation Run Id */
+            evaluation_run_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Input */
+            input: string | null;
+            /** Otel Trace Id */
+            otel_trace_id: string;
+            /** Output */
+            output: string | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Status */
+            status: string;
+            /** Test Case Id */
+            test_case_id: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1054,6 +1210,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TestCaseRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_traces_api_v1_traces_get: {
+        parameters: {
+            query?: {
+                agent_version_id?: string | null;
+                status?: ("running" | "completed" | "failed") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_TraceRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_trace_api_v1_traces__trace_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceDetail"];
                 };
             };
             /** @description Validation Error */
