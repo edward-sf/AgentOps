@@ -1,4 +1,4 @@
-.PHONY: api-types setup db migrate seed dev-api dev-web dev test lint typecheck fmt check down
+.PHONY: api-types setup db migrate seed dev-api dev-web dev test lint typecheck fmt check up down
 
 setup:
 	cd backend && uv sync
@@ -40,8 +40,11 @@ fmt:
 check:
 	./scripts/check.sh
 
+up:
+	docker compose --profile full up -d --build --wait
+
 down:
-	docker compose down
+	docker compose --profile full down
 
 api-types:
 	cd backend && uv run python -m app.export_openapi > ../frontend/lib/api/openapi.json
