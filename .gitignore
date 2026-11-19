@@ -15,6 +15,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!frontend/lib/
 lib64/
 parts/
 sdist/
@@ -151,6 +152,8 @@ activemq-data/
 
 # Environments
 .env
+.env.local
+.env.dev
 .envrc
 .venv
 env/
@@ -221,3 +224,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node / Next.js (root-level safety net; frontend/ has its own)
+node_modules/
+.next/
