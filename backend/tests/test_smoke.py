@@ -19,6 +19,12 @@ async def test_refuses_without_key(settings: Settings, capsys: Any) -> None:
     assert "ANTHROPIC_API_KEY is not set" in capsys.readouterr().err
 
 
+async def test_refuses_with_empty_key(settings: Settings, capsys: Any) -> None:
+    code = await smoke.run(settings.model_copy(update={"anthropic_api_key": ""}))
+    assert code == 2
+    assert "ANTHROPIC_API_KEY is not set" in capsys.readouterr().err
+
+
 async def seed_weather_bot(client: AsyncClient, parameters: dict[str, Any]) -> None:
     r = await client.post("/api/v1/agents", json={"name": smoke.AGENT_NAME})
     assert r.status_code == 201, r.text

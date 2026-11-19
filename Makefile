@@ -33,17 +33,22 @@ dev:
 test:
 	cd backend && uv run pytest -q
 	cd frontend && npm test
+	cd scripts/flow && uv run pytest -q
 
 lint:
 	cd backend && uv run ruff check && uv run ruff format --check
 	cd frontend && npm run lint
+	cd scripts/flow && uv run ruff check && uv run ruff format --check
 
 typecheck:
 	cd backend && uv run mypy
 	cd frontend && npm run typecheck
+	cd scripts/flow && uv run mypy
 
 fmt:
 	cd backend && uv run ruff check --fix && uv run ruff format
+	cd scripts/flow && uv run ruff check --fix && uv run ruff format
+	cd frontend && npm run lint -- --fix
 
 check:
 	./scripts/check.sh
