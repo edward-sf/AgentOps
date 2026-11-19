@@ -29,7 +29,7 @@ async def make_agent_version(
         agent_id=agent.id,
         version=1,
         provider=provider,
-        model="claude-sonnet-4-5",
+        model="claude-sonnet-5-5",
         system_prompt="You are a helpful assistant.",
         parameters=dict(parameters) if parameters is not None else {"max_tokens": 1024},
         tools=list(tools),
