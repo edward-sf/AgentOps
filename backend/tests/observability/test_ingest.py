@@ -42,7 +42,7 @@ def run_records(
         otel_trace_id=trace_id,
         otel_span_id=llm_id,
         parent_otel_span_id=root_id,
-        name="chat claude-sonnet-4-5",
+        name="chat claude-sonnet-5-5",
         attributes={attr.GEN_AI_OPERATION: "chat", attr.GEN_AI_INPUT_TOKENS: 20},
     )
     tool = span_record(
