@@ -33,7 +33,13 @@ from app.agents.providers.base import (
 )
 from app.config import Settings, get_settings
 
-RECORDABLE_SCENARIOS = ("tool_use", "final_answer", "direct_answer", "max_tokens")
+RECORDABLE_SCENARIOS = (
+    "tool_use",
+    "final_answer",
+    "direct_answer",
+    "max_tokens",
+    "thinking_tool_use",
+)
 """Scenarios that `make record` writes. They must end up `"source": "recorded"`."""
 
 CONSTRUCTED_SCENARIOS = ("refusal", "unknown_block", "unknown_stop_reason", "overloaded")
@@ -61,6 +67,13 @@ WEATHER_RESULT = json.dumps(
 
 SEATTLE = "Find the weather in Seattle"
 FRANCE = "What is the capital of France?"
+THINKING_QUESTION = (
+    "Find the weather in Seattle, then decide whether I should cycle to work or take the bus, "
+    "and explain your reasoning."
+)
+"""Asks for a decision, so adaptive thinking is more likely to produce a thinking block."""
+THINKING_ATTEMPTS = 5
+"""Adaptive thinking decides per request whether to think, so `thinking_tool_use` is retried."""
 
 
 def _request(turns: list[Turn], **params: Any) -> ModelRequest:
@@ -91,25 +104,57 @@ async def _call(
     return body, response
 
 
+def _follow_up(question: list[Turn], tool_use: ModelResponse) -> list[Turn]:
+    """The tool-use turn replayed unchanged, thinking included, then the weather result."""
+    return [
+        *question,
+        AssistantTurn(
+            text=tool_use.text, tool_calls=tool_use.tool_calls, raw_content=tool_use.raw_content
+        ),
+        ToolResultsTurn(
+            results=tuple(ToolResult(call.id, WEATHER_RESULT) for call in tool_use.tool_calls)
+        ),
+    ]
+
+
+async def _record_thinking(
+    client: anthropic.AsyncAnthropic, question: list[Turn]
+) -> tuple[dict[str, Any], ModelResponse]:
+    for attempt in range(1, THINKING_ATTEMPTS + 1):
+        body, response = await _call(client, "thinking_tool_use", _request(question), "tool_use")
+        if response.thinking_blocks:
+            return body, response
+        print(
+            f"thinking_tool_use: attempt {attempt} of {THINKING_ATTEMPTS} had no thinking block",
+            file=sys.stderr,
+        )
+    raise UnexpectedResponse(
+        f"thinking_tool_use: no thinking block in {THINKING_ATTEMPTS} attempts; "
+        "nothing was written, try again"
+    )
+
+
 async def _record_all(client: anthropic.AsyncAnthropic) -> dict[str, dict[str, Any]]:
     bodies: dict[str, dict[str, Any]] = {}
 
     seattle: list[Turn] = [UserTurn(text=SEATTLE)]
     bodies["tool_use"], tool_use = await _call(client, "tool_use", _request(seattle), "tool_use")
 
-    follow_up: list[Turn] = [
-        *seattle,
-        AssistantTurn(text=tool_use.text, tool_calls=tool_use.tool_calls),
-        ToolResultsTurn(
-            results=tuple(ToolResult(call.id, WEATHER_RESULT) for call in tool_use.tool_calls)
-        ),
-    ]
-    bodies["final_answer"], _ = await _call(client, "final_answer", _request(follow_up), "end_turn")
+    bodies["final_answer"], _ = await _call(
+        client, "final_answer", _request(_follow_up(seattle, tool_use)), "end_turn"
+    )
     bodies["direct_answer"], _ = await _call(
         client, "direct_answer", _request([UserTurn(text=FRANCE)]), "end_turn"
     )
     bodies["max_tokens"], _ = await _call(
         client, "max_tokens", _request(seattle, max_tokens=5), "max_tokens"
+    )
+
+    thinking_question: list[Turn] = [UserTurn(text=THINKING_QUESTION)]
+    bodies["thinking_tool_use"], thinking = await _record_thinking(client, thinking_question)
+    # Not saved: proves the API accepts the thinking turn sent back unchanged (a 400 otherwise).
+    await _call(
+        client, "thinking replay", _request(_follow_up(thinking_question, thinking)), "end_turn"
     )
     return bodies
 

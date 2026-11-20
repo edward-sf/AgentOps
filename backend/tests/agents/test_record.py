@@ -38,11 +38,14 @@ def test_main_refuses_without_key(
     assert "ANTHROPIC_API_KEY is not set" in capsys.readouterr().err
 
 
+FIRST_FOUR = ("tool_use", "final_answer", "direct_answer", "max_tokens")
+"""The scenarios recorded before `thinking_tool_use`, in request order."""
+
+
 async def test_records_every_recordable_scenario(tmp_path: Path) -> None:
     captured: list[dict[str, Any]] = []
-    client = replay_client(
-        "tool_use", "final_answer", "direct_answer", "max_tokens", requests=captured
-    )
+    # The last `final_answer` answers the check that the thinking turn replays.
+    client = replay_client(*FIRST_FOUR, "thinking_tool_use", "final_answer", requests=captured)
 
     code = await record.run(client=client, out_dir=tmp_path)
 
@@ -57,7 +60,7 @@ async def test_records_every_recordable_scenario(tmp_path: Path) -> None:
         assert fixture["status_code"] == 200
         assert fixture["body"] == load_fixture(scenario)["body"]
 
-    tool_use, final_answer, direct_answer, max_tokens = captured
+    tool_use, final_answer, direct_answer, max_tokens, thinking, replay = captured
     assert tool_use["messages"] == [{"role": "user", "content": "Find the weather in Seattle"}]
     assert tool_use["tools"][0]["name"] == "get_weather"
     assert tool_use["system"] == record.SYSTEM_PROMPT
@@ -70,6 +73,47 @@ async def test_records_every_recordable_scenario(tmp_path: Path) -> None:
         {"role": "user", "content": "What is the capital of France?"}
     ]
     assert max_tokens["max_tokens"] == 5
+    assert thinking["messages"] == [{"role": "user", "content": record.THINKING_QUESTION}]
+    assert "thinking" not in thinking  # adaptive thinking: the parameter is left out
+    thinking_content = load_fixture("thinking_tool_use")["body"]["content"]
+    assert replay["messages"][1] == {"role": "assistant", "content": thinking_content}
+    tool_id = next(b["id"] for b in thinking_content if b["type"] == "tool_use")
+    assert replay["messages"][2]["content"][0]["tool_use_id"] == tool_id
+
+
+async def test_thinking_scenario_retried_until_a_thinking_block(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    captured: list[dict[str, Any]] = []
+    client = replay_client(
+        *FIRST_FOUR, "tool_use", "tool_use", "thinking_tool_use", "final_answer", requests=captured
+    )
+
+    code = await record.run(client=client, out_dir=tmp_path)
+
+    assert code == 0
+    assert json_files(tmp_path)["thinking_tool_use"]["body"] == (
+        load_fixture("thinking_tool_use")["body"]
+    )
+    attempts = captured[4:7]
+    assert all(a["messages"] == attempts[0]["messages"] for a in attempts)
+    err = capsys.readouterr().err
+    assert "thinking_tool_use: attempt 1 of 5 had no thinking block" in err
+    assert "thinking_tool_use: attempt 2 of 5 had no thinking block" in err
+
+
+async def test_no_thinking_block_in_five_attempts_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    captured: list[dict[str, Any]] = []
+    client = replay_client(*FIRST_FOUR, *["tool_use"] * 5, requests=captured)
+
+    code = await record.run(client=client, out_dir=tmp_path)
+
+    assert code == 1
+    assert len(captured) == 4 + record.THINKING_ATTEMPTS == 9
+    assert "thinking_tool_use: no thinking block in 5 attempts" in capsys.readouterr().err
+    assert entries(tmp_path) == []
 
 
 async def test_unexpected_stop_reason_writes_nothing(
