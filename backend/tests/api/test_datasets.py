@@ -5,8 +5,8 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import EvaluationResult, EvaluationRun, Trace
-from tests.factories import DEFAULT_TRACE_ID, make_agent_version
+from app.models import Dataset, EvaluationResult
+from tests.factories import make_evaluation_run, make_trace
 
 DS = "/api/v1/datasets"
 
@@ -179,10 +179,7 @@ async def test_empty_input_is_422(client: AsyncClient, dataset: dict[str, Any]) 
 
 
 async def _record_result(db_session: AsyncSession, dataset_id: str, case_id: str) -> None:
-    version = await make_agent_version(db_session)
-    run = EvaluationRun(agent_version_id=version.id, dataset_id=dataset_id)
-    db_session.add(run)
-    await db_session.flush()
+    run = await make_evaluation_run(db_session, dataset=await db_session.get(Dataset, dataset_id))
     db_session.add(
         EvaluationResult(
             evaluation_run_id=run.id,
@@ -252,11 +249,7 @@ async def test_delete_case_referenced_only_by_trace_is_409(
 ) -> None:
     base = f"{DS}/{dataset['id']}/test-cases"
     case = (await client.post(base, json={"key": "k", "input": "q"})).json()
-    version = await make_agent_version(db_session)
-    db_session.add(
-        Trace(otel_trace_id=DEFAULT_TRACE_ID, agent_version_id=version.id, test_case_id=case["id"])
-    )
-    await db_session.flush()
+    await make_trace(db_session, test_case_id=case["id"])
     r = await client.delete(f"{base}/{case['id']}")
     assert r.status_code == 409
     assert r.json() == {"detail": "Test case is referenced by evaluation history"}
