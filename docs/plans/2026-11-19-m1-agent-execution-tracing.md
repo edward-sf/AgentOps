@@ -69,7 +69,7 @@
 **Goal:** A provider-neutral model interface, and an Anthropic implementation on the plain SDK. It parses responses strictly, retries transient errors visibly on the current span, and is tested by replaying saved real responses. It also adds `make record`, which only the author runs, and a CI guard that fails when the fixtures no longer match the locked SDK or the models in use.
 
 **Acceptance criteria**
-- [ ] `AnthropicProvider.complete` returns a `ModelResponse` for the tool-use, final-answer, direct-answer and `max_tokens` fixtures. It raises `ProviderResponseError` for an unknown content-block type and for an unknown stop reason.
+- [ ] `AnthropicProvider.complete` returns a `ModelResponse` for the tool-use, final-answer, direct-answer and `max_tokens` fixtures. It raises `ProviderResponseError` for an unknown content-block type, and passes an unknown stop reason through (D7).
 - [ ] Transient errors (429, 500–599, `overloaded_error`) are retried up to 3 attempts in total. Each failed attempt adds a `gen_ai.retry` event to the current span, and the span gets `agentops.llm.attempts`. After the last failed attempt the adapter raises `ProviderAPIError`. Non-transient errors (400, 401, 403, 404) are not retried.
 - [ ] Fixtures are saved response bodies replayed through `httpx.MockTransport`, whatever request is sent. No test needs a key or the network.
 - [ ] `test_fixture_guard` fails, with a message to run `make record`, when a fixture's `sdk_version` differs from the installed `anthropic` version, or when an `anthropic` model in `datasets/sample.json` has no recorded fixture.
@@ -320,6 +320,7 @@
 | --- | --- | --- | --- |
 | `end_turn`, `stop_sequence`, `refusal` | completed | — | — |
 | `max_tokens` | failed | `answer truncated at max_tokens` | llm (status ERROR) |
+| `tool_use` with no tool calls | failed | `model stopped for tool_use without calling a tool` | llm |
 | any other stop reason | failed | `unexpected stop reason: <reason>` | llm |
 | another call needed after `max_steps` calls | failed | `step limit reached (<max_steps> model calls)` | root only |
 | model calls a tool not in `config.tools` | failed | `model called unknown tool: <name>` | tool |
