@@ -15,7 +15,12 @@ from typing import Any
 
 import anthropic
 
-from app.agents.providers.anthropic import make_anthropic_client, parse_message, to_anthropic_kwargs
+from app.agents.providers.anthropic import (
+    describe_api_error,
+    make_anthropic_client,
+    parse_message,
+    to_anthropic_kwargs,
+)
 from app.agents.providers.base import (
     AssistantTurn,
     ModelRequest,
@@ -117,7 +122,8 @@ async def run(
 ) -> int:
     """Record every recordable scenario, then write all of them. Returns the exit code."""
     if client is None:
-        api_key = (settings or get_settings()).anthropic_api_key
+        secret = (settings or get_settings()).anthropic_api_key
+        api_key = secret.get_secret_value() if secret else ""
         if not api_key:
             print("ANTHROPIC_API_KEY is not set", file=sys.stderr)
             return 2
@@ -127,6 +133,10 @@ async def run(
         bodies = await _record_all(client)
     except UnexpectedResponse as exc:
         print(str(exc), file=sys.stderr)
+        return 1
+    except anthropic.APIError as exc:
+        # One line, no traceback; nothing has been written yet.
+        print(f"record: anthropic API error: {describe_api_error(exc)}", file=sys.stderr)
         return 1
 
     recorded_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

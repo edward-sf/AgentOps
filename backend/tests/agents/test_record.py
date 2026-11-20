@@ -84,3 +84,29 @@ async def test_unexpected_stop_reason_writes_nothing(
     assert code == 1
     assert "tool_use" in capsys.readouterr().err
     assert entries(tmp_path) == []
+
+
+async def test_invalid_key_prints_one_line_and_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The SDK raises `AuthenticationError` for this 401.
+    client = replay_responses(
+        (
+            401,
+            {
+                "type": "error",
+                "error": {"type": "authentication_error", "message": "invalid x-api-key"},
+            },
+        )
+    )
+
+    code = await record.run(client=client, out_dir=tmp_path)
+
+    assert code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    lines = captured.err.splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith("record: anthropic API error: authentication_error (status 401)")
+    assert "invalid x-api-key" in lines[0]
+    assert entries(tmp_path) == []

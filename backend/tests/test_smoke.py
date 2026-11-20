@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from httpx import AsyncClient
+from pydantic import SecretStr
 
 from app import smoke
 from app.agents.providers.base import ProviderAPIError
@@ -20,7 +21,7 @@ async def test_refuses_without_key(settings: Settings, capsys: Any) -> None:
 
 
 async def test_refuses_with_empty_key(settings: Settings, capsys: Any) -> None:
-    code = await smoke.run(settings.model_copy(update={"anthropic_api_key": ""}))
+    code = await smoke.run(settings.model_copy(update={"anthropic_api_key": SecretStr("")}))
     assert code == 2
     assert "ANTHROPIC_API_KEY is not set" in capsys.readouterr().err
 

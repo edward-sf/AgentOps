@@ -168,6 +168,8 @@ def build_graph(
     async def run_tools(state: AgentState) -> dict[str, Any]:
         last = state["turns"][-1]
         assert isinstance(last, AssistantTurn)
+        # On a failure, earlier results in this turn are not carried: the run has failed, they're
+        # on their spans, and the conversation state is discarded.
         results: list[ToolResult] = []
         for call in last.tool_calls:
             with tracer.start_as_current_span(

@@ -183,7 +183,8 @@ def _kind(exc: anthropic.APIError) -> ProviderFailureKind | None:
     return None
 
 
-def _describe(exc: anthropic.APIError) -> str:
+def describe_api_error(exc: anthropic.APIError) -> str:
+    """`<error type> (status <n>): <message>`, for spans and `make record`."""
     status = f" (status {exc.status_code})" if isinstance(exc, anthropic.APIStatusError) else ""
     return f"{_error_type(exc)}{status}: {exc.message}"
 
@@ -219,7 +220,7 @@ class AnthropicProvider:
                         RETRY_EVENT,
                         {
                             "error.type": _error_type(exc),
-                            "error.message": _describe(exc),
+                            "error.message": describe_api_error(exc),
                             "agentops.llm.attempt": attempt,
                         },
                     )
@@ -227,7 +228,7 @@ class AnthropicProvider:
                     span.set_attribute(ATTEMPTS_ATTRIBUTE, attempt)
                     raise ProviderAPIError(
                         f"anthropic API error after {attempt} attempt"
-                        f"{'s' if attempt > 1 else ''}: {_describe(exc)}",
+                        f"{'s' if attempt > 1 else ''}: {describe_api_error(exc)}",
                         kind=_kind(exc),
                     ) from exc
                 await self._sleep(0.5 * 2 ** (attempt - 1))
