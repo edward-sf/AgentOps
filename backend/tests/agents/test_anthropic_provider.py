@@ -11,9 +11,9 @@ from anthropic.types import (
     ToolUseBlockParam,
 )
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
-from pydantic import TypeAdapter
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from pydantic import TypeAdapter
 
 from app.agents.providers.anthropic import AnthropicProvider, make_anthropic_client
 from app.agents.providers.base import (
@@ -152,7 +152,11 @@ PARAM_KEYS = {
     "tool_use": set(ToolUseBlockParam.__annotations__),
 }
 REDACTED = {"type": "redacted_thinking", "data": "EmwKAhgBEgy3va3pzix/LafPsn4aDFIT2Xlxh0L5L8rLVyIw"}
-THINKING = {"type": "thinking", "thinking": "", "signature": "EqQBCgIYAhIM1gbcDa9GJwZA2b3hGgxBdjrkzLoky3dl1pk"}
+THINKING = {
+    "type": "thinking",
+    "thinking": "",
+    "signature": "EqQBCgIYAhIM1gbcDa9GJwZA2b3hGgxBdjrkzLoky3dl1pk",
+}
 
 
 def assert_valid_block_params(blocks: tuple[dict[str, Any], ...]) -> None:

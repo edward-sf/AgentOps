@@ -92,8 +92,9 @@ async def test_thinking_scenario_retried_until_a_thinking_block(
     code = await record.run(client=client, out_dir=tmp_path)
 
     assert code == 0
-    assert json_files(tmp_path)["thinking_tool_use"]["body"] == (
-        load_fixture("thinking_tool_use")["body"]
+    assert (
+        json_files(tmp_path)["thinking_tool_use"]["body"]
+        == (load_fixture("thinking_tool_use")["body"])
     )
     attempts = captured[4:7]
     assert all(a["messages"] == attempts[0]["messages"] for a in attempts)
