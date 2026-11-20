@@ -149,9 +149,7 @@ async def test_submit_unsupported_provider_422(
     assert await run_count(db_session) == 0
 
 
-async def test_submit_invalid_parameters_422(
-    client: AsyncClient, db_session: AsyncSession
-) -> None:
+async def test_submit_invalid_parameters_422(client: AsyncClient, db_session: AsyncSession) -> None:
     version = await make_agent_version(db_session, parameters={"temperature": 0.2})
     dataset = await make_dataset(db_session)
     r = await client.post(
