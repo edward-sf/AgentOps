@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.config import AgentConfig
 from app.agents.graph import build_graph, initial_state, recursion_limit
-from app.agents.providers.base import Provider
+from app.agents.providers.base import Provider, ProviderFailureKind
 from app.observability import attributes as attr
 from app.observability.ingest import ingest_spans
 from app.observability.tracing import RunTracer
@@ -27,14 +27,27 @@ ROOT_SPAN_NAME = "agent.run"
 class RunOutcome:
     trace_id: uuid.UUID
     status: Literal["completed", "failed"]
+    output: str | None = None
+    """The final answer of a `completed` run (also stored as `Trace.output`)."""
+    error: str | None = None
+    """Why a `failed` run failed (also stored as `Trace.error`)."""
+    provider_failure: ProviderFailureKind | None = None
+    """Set only when the run failed because of a `ProviderAPIError` with this `kind` (D10)."""
 
 
 async def run_agent(
-    *, session: AsyncSession, provider: Provider, config: AgentConfig, input: str
+    *,
+    session: AsyncSession,
+    provider: Provider,
+    config: AgentConfig,
+    input: str,
+    evaluation_run_id: uuid.UUID | None = None,
+    test_case_id: uuid.UUID | None = None,
 ) -> RunOutcome:
     """Run the agent on `input`, then store its spans through `ingest_spans`.
 
-    Flushes; never commits.
+    `evaluation_run_id` and `test_case_id`, when given, are set on the root span, which is
+    how the stored trace is linked to an evaluation (M2 spec 6.1). Flushes; never commits.
     """
     with RunTracer() as run_tracer:
         graph = build_graph(provider, config, run_tracer.tracer)
@@ -46,6 +59,10 @@ async def run_agent(
                     attr.INPUT: json.dumps(input),
                 }
             )
+            if evaluation_run_id is not None:
+                root.set_attribute(attr.EVALUATION_RUN_ID, str(evaluation_run_id))
+            if test_case_id is not None:
+                root.set_attribute(attr.TEST_CASE_ID, str(test_case_id))
             # D6: our spans are the only instrumentation. LangSmith env vars
             # (LANGSMITH_TRACING, LANGCHAIN_TRACING_V2) must never send run data anywhere.
             with tracing_context(enabled=False):
@@ -62,4 +79,11 @@ async def run_agent(
                 root.set_status(Status(StatusCode.OK))
         records = run_tracer.records()
     (trace_id,) = await ingest_spans(session, records)
-    return RunOutcome(trace_id=trace_id, status="failed" if failure is not None else "completed")
+    if failure is not None:
+        return RunOutcome(
+            trace_id=trace_id,
+            status="failed",
+            error=failure,
+            provider_failure=state["provider_failure"],
+        )
+    return RunOutcome(trace_id=trace_id, status="completed", output=state["final_text"])

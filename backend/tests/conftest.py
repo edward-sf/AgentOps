@@ -6,7 +6,13 @@ from alembic.config import Config
 from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from alembic import command
 from app.config import Settings
@@ -75,3 +81,39 @@ async def app(settings: Settings, db_session: AsyncSession) -> AsyncIterator[Fas
 async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
     async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as c:
         yield c
+
+
+TRUNCATED_TABLES = (
+    "evaluation_results",
+    "evaluation_runs",
+    "spans",
+    "traces",
+    "test_cases",
+    "datasets",
+    "agent_versions",
+    "agents",
+)
+
+
+async def _truncate(engine: AsyncEngine) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(text(f"TRUNCATE {', '.join(TRUNCATED_TABLES)} CASCADE"))
+
+
+@pytest.fixture
+async def committed_session_factory(
+    engine: AsyncEngine,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """An `async_sessionmaker` on the test engine whose data really commits.
+
+    The rollback-only `db_session` can't be seen from a second connection, and the queue's
+    `FOR UPDATE SKIP LOCKED` only means something across connections. The tables are
+    truncated before (in case an earlier run was killed mid-test) and after each test, so
+    nothing leaks into the `db_session` tests that share this database. Tests run one at a
+    time, so the `TRUNCATE` lock never waits on another test's open transaction.
+    """
+    await _truncate(engine)
+    try:
+        yield async_sessionmaker(engine, expire_on_commit=False)
+    finally:
+        await _truncate(engine)

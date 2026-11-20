@@ -17,6 +17,7 @@ from flow.cli import (
     slug_for,
 )
 from flow.config import REQUIRED_CI_JOBS
+from flow.plan import parse_plan
 from flow.verdict import format_verdict
 
 
@@ -261,19 +262,95 @@ def test_deviation_notes_drop_their_own_heading() -> None:
     assert cli.deviation_notes("") == "None."
 
 
-def test_issue_pr_puts_notes_under_template_heading(
-    fake: FakeGh, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_deviation_notes_heading_on_first_non_blank_line() -> None:
+    assert cli.deviation_notes("\n\n  ## Deviations from plan\n\n- a\n") == "- a"
+    assert cli.deviation_notes("\ufeff\r\n## Deviations\r\n- a\r\n") == "- a"
+    assert cli.deviation_notes("\ufeff\n\n# Deviation notes\n- a") == "- a"
+    assert cli.deviation_notes("- a\n## Deviations\n- b") == "- a\n## Deviations\n- b"
+
+
+def test_review_context_reads_plan_from_pr_base(
+    fake: FakeGh, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    fake.pr["baseRefName"] = "milestone/m0-alt"
+    bases: list[tuple[int, str | None]] = []
+
+    def fake_load(m: int, base: str | None = None) -> list[Any]:
+        bases.append((m, base))
+        return parse_plan("### M0.T2 thing\n\n**Acceptance criteria**\n- [ ] Works\n")
+
+    monkeypatch.setattr(cli, "load_plan", fake_load)
+    assert cli.main(["review-context", "12"]) == 0
+    assert bases == [(0, "milestone/m0-alt")]
+    out = capsys.readouterr().out
+    assert "## Task M0.T2" in out and f"## Head {SHA}" in out
+
+
+def test_task_for_reads_deleted_milestone_plan_from_main(monkeypatch: pytest.MonkeyPatch) -> None:
+    bases: list[tuple[int, str | None]] = []
+
+    def fake_load(m: int, base: str | None = None) -> list[Any]:
+        bases.append((m, base))
+        return parse_plan("### M1.T3 dep\n**Checkpoint**\n")
+
+    monkeypatch.setattr(cli, "load_plan", fake_load)
+    monkeypatch.setattr(milestone, "remote_branch_exists", lambda b: b == "milestone/m2")
+    task = cli.task_for("M1.T3")
+    assert task is not None and task.checkpoint
+    cli.task_for("M2.T1")
+    assert bases == [(1, "main"), (2, "milestone/m2")]
+
+
+def _issue_pr_repo(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     (root / "docs/plans").mkdir(parents=True)
     (root / ".github/PULL_REQUEST_TEMPLATE").mkdir(parents=True)
-    (root / "docs/plans/2026-m0-x.md").write_text("### M0.T2 thing\n")
+    (root / "docs/plans/2026-m0-x.md").write_text("### M0.T2 local edit\n")
     template = Path(__file__).parents[3] / ".github/PULL_REQUEST_TEMPLATE/issue.md"
     (root / ".github/PULL_REQUEST_TEMPLATE/issue.md").write_text(template.read_text())
+    return root
+
+
+def _fake_origin_git(calls: list[list[str]]) -> Any:
+    def fake_git(args: list[str]) -> str:
+        calls.append(args)
+        if args[0] == "ls-tree":
+            return "docs/plans/2026-m0-origin.md\n"
+        if args[0] == "show":
+            return "### M0.T2 thing on base\n"
+        return ""
+
+    return fake_git
+
+
+def test_issue_pr_builds_task_link_from_origin_base(
+    fake: FakeGh, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _issue_pr_repo(tmp_path)
+    git_calls: list[list[str]] = []
+    monkeypatch.setattr(cli, "repo_root", lambda: root)
+    monkeypatch.setattr(cli, "_sh", lambda args, check=True: "2-thing")
+    monkeypatch.setattr(cli, "_git", _fake_origin_git(git_calls))
+    monkeypatch.setattr(board, "set_status", lambda n, s: True)
+    assert cli.main(["issue-pr", "2", "fix: t"]) == 0
+    assert ["fetch", "origin", "milestone/m0"] in git_calls
+    assert ["show", "origin/milestone/m0:docs/plans/2026-m0-origin.md"] in git_calls
+    (idx,) = [i for i, c in enumerate(fake.calls) if c[:2] == ["pr", "create"]]
+    body = fake.inputs[idx] or ""
+    link = "https://github.com/edward-sf/AgentOps/blob/milestone/m0/docs/plans/2026-m0-origin.md"
+    assert f"{link}#m0t2-thing-on-base\n" in body
+    assert "local-edit" not in body
+
+
+def test_issue_pr_puts_notes_under_template_heading(
+    fake: FakeGh, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _issue_pr_repo(tmp_path)
     notes = tmp_path / "notes.md"
     notes.write_text("## Deviations from plan\n\n- Added X.\n")
     monkeypatch.setattr(cli, "repo_root", lambda: root)
     monkeypatch.setattr(cli, "_sh", lambda args, check=True: "2-thing")
+    monkeypatch.setattr(cli, "_git", _fake_origin_git([]))
     monkeypatch.setattr(board, "set_status", lambda n, s: True)
     assert cli.main(["issue-pr", "2", "fix: t", "--notes", str(notes)]) == 0
     (idx,) = [i for i, c in enumerate(fake.calls) if c[:2] == ["pr", "create"]]

@@ -1,6 +1,7 @@
 import json
 import secrets
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -11,10 +12,10 @@ from opentelemetry.trace import Status, StatusCode
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AgentVersion, Span, Trace
+from app.models import AgentVersion, Span, TestCase, Trace
 from app.observability import attributes as attr
 from app.observability.ingest import IngestError, SpanRecord, from_readable_span, ingest_spans
-from tests.factories import make_agent_version, span_record
+from tests.factories import make_agent_version, make_dataset, make_evaluation_run, span_record
 
 QUESTION = "What's the weather in Seattle?"
 ANSWER = "It is 12°C and cloudy in Seattle."
@@ -207,6 +208,51 @@ async def test_ingest_root_without_agent_version_raises(db_session: AsyncSession
     with pytest.raises(IngestError, match="unknown agent version"):
         await ingest_spans(db_session, [unknown])
     assert await count(db_session, Trace) == 0
+
+
+async def test_root_links_evaluation_run_and_case(db_session: AsyncSession) -> None:
+    version = await make_agent_version(db_session)
+    dataset = await make_dataset(db_session, cases=1)
+    run = await make_evaluation_run(db_session, version=version, dataset=dataset)
+    case_id = (
+        await db_session.execute(select(TestCase.id).where(TestCase.dataset_id == dataset.id))
+    ).scalar_one()
+    root, llm, tool = run_records(version)
+    root = replace(
+        root,
+        attributes={
+            **root.attributes,
+            attr.EVALUATION_RUN_ID: str(run.id),
+            attr.TEST_CASE_ID: str(case_id),
+        },
+    )
+    [trace_id] = await ingest_spans(db_session, [llm, tool, root])
+    trace = await db_session.get(Trace, trace_id)
+    assert trace is not None
+    assert trace.evaluation_run_id == run.id
+    assert trace.test_case_id == case_id
+
+
+async def test_root_without_evaluation_attributes_is_unlinked(db_session: AsyncSession) -> None:
+    version = await make_agent_version(db_session)
+    [trace_id] = await ingest_spans(db_session, list(run_records(version)))
+    trace = await db_session.get(Trace, trace_id)
+    assert trace is not None
+    assert trace.evaluation_run_id is None
+    assert trace.test_case_id is None
+
+
+@pytest.mark.parametrize("key", [attr.EVALUATION_RUN_ID, attr.TEST_CASE_ID])
+async def test_root_bad_evaluation_run_id_is_ingest_error(
+    db_session: AsyncSession, key: str
+) -> None:
+    version = await make_agent_version(db_session)
+    root, llm, tool = run_records(version)
+    root = replace(root, attributes={**root.attributes, key: "not-a-uuid"})
+    with pytest.raises(IngestError, match=f"{key} 'not-a-uuid' is not a UUID"):
+        await ingest_spans(db_session, [root, llm, tool])
+    assert await count(db_session, Trace) == 0
+    assert await count(db_session, Span) == 0
 
 
 async def test_ingest_batch_with_one_bad_trace_stores_nothing(db_session: AsyncSession) -> None:

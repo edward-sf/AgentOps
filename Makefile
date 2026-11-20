@@ -1,4 +1,4 @@
-.PHONY: api-types setup db migrate seed dev-api dev-web dev test lint typecheck fmt check up down record smoke
+.PHONY: api-types setup db migrate seed dev-api dev-web dev-worker dev test lint typecheck fmt check up down record smoke eval
 
 setup:
 	cd backend && uv sync
@@ -21,14 +21,23 @@ record:
 smoke:
 	cd backend && uv run python -m app.smoke
 
+# Author only: one real evaluation run of weather-basics (26 cases, about 50-80 model calls)
+# against weather-bot v1; needs ANTHROPIC_API_KEY.
+eval:
+	cd backend && uv run python -m app.eval
+
 dev-api:
 	cd backend && uv run uvicorn app.main:app --reload --port 8000
 
 dev-web:
 	cd frontend && npm run dev
 
+# The evaluation worker, restarted on code changes. It needs ANTHROPIC_API_KEY to run cases.
+dev-worker:
+	cd backend && uv run watchfiles --filter python --sigint-timeout 60 app.worker.main app
+
 dev:
-	$(MAKE) -j2 dev-api dev-web
+	$(MAKE) -j3 dev-api dev-web dev-worker
 
 test:
 	cd backend && uv run pytest -q

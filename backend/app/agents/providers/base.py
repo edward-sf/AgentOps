@@ -82,5 +82,22 @@ class ProviderResponseError(ProviderError):
     """The response had a missing or ill-typed field, or an unknown content-block type."""
 
 
+ProviderFailureKind = Literal["account", "unavailable"]
+"""Why a provider call failed, when it was the provider's fault (M2 D10).
+
+- `account`: authentication, permission or billing. Every later call would fail the same way.
+- `unavailable`: a rate limit, overload, server, connection or timeout error that outlasted
+  the adapter's retries.
+"""
+
+
 class ProviderAPIError(ProviderError):
-    """The API call failed, after any retries."""
+    """The API call failed, after any retries.
+
+    `kind` is set when the provider, not the agent, is at fault (M2 D10). `None` means the
+    request itself was rejected (for example a 400 or 404), which counts as an agent failure.
+    """
+
+    def __init__(self, message: str, *, kind: ProviderFailureKind | None = None) -> None:
+        super().__init__(message)
+        self.kind: ProviderFailureKind | None = kind

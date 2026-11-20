@@ -112,16 +112,21 @@ def _kind(record: SpanRecord) -> str:
     return str(kind)
 
 
-def _agent_version_id(root: SpanRecord) -> uuid.UUID:
-    raw = root.attributes.get(attr.AGENT_VERSION_ID)
+def _uuid_attribute(root: SpanRecord, key: str) -> uuid.UUID | None:
+    raw = root.attributes.get(key)
     if raw is None:
-        raise IngestError(f"root span {root.otel_span_id}: {attr.AGENT_VERSION_ID} is missing")
+        return None
     try:
         return uuid.UUID(str(raw))
     except ValueError as exc:
-        raise IngestError(
-            f"root span {root.otel_span_id}: {attr.AGENT_VERSION_ID} {raw!r} is not a UUID"
-        ) from exc
+        raise IngestError(f"root span {root.otel_span_id}: {key} {raw!r} is not a UUID") from exc
+
+
+def _agent_version_id(root: SpanRecord) -> uuid.UUID:
+    version_id = _uuid_attribute(root, attr.AGENT_VERSION_ID)
+    if version_id is None:
+        raise IngestError(f"root span {root.otel_span_id}: {attr.AGENT_VERSION_ID} is missing")
+    return version_id
 
 
 def _trace_values(root: SpanRecord) -> dict[str, Any]:
@@ -133,6 +138,8 @@ def _trace_values(root: SpanRecord) -> dict[str, Any]:
     return {
         "otel_trace_id": root.otel_trace_id,
         "agent_version_id": _agent_version_id(root),
+        "evaluation_run_id": _uuid_attribute(root, attr.EVALUATION_RUN_ID),
+        "test_case_id": _uuid_attribute(root, attr.TEST_CASE_ID),
         "status": "failed" if root.status == "error" else "completed",
         "input": trace_input if isinstance(trace_input, str) else None,
         "output": trace_output if isinstance(trace_output, str) else None,

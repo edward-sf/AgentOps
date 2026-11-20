@@ -10,6 +10,7 @@ dependencies = [
     "alembic>=1.20.1",
     "anthropic>=2.11.0",
     "fastapi>=0.163.1",
+    "httpx2>=2.16.2",
     "langgraph>=1.2.23",
     "langsmith>=0.15.0",
     "opentelemetry-api>=1.45.2",

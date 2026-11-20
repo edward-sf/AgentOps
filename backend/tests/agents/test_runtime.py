@@ -24,7 +24,7 @@ from app.agents.providers.base import (
     UserTurn,
 )
 from app.agents.runtime import RunOutcome, run_agent
-from app.models import Span, Trace
+from app.models import Dataset, EvaluationRun, Span, TestCase, Trace
 from app.observability.tracing import RunTracer
 from app.services.traces import get_trace_detail
 from tests.agents.fakes import ScriptedProvider, end_turn, response, tool_use
@@ -485,6 +485,142 @@ async def test_replayed_empty_max_tokens_fails(db_session: AsyncSession) -> None
 def test_run_outcome_shape() -> None:
     outcome = RunOutcome(trace_id=uuid.uuid4(), status="completed")
     assert outcome.status == "completed"
+    assert outcome.output is None
+    assert outcome.error is None
+    assert outcome.provider_failure is None
+
+
+# --- richer outcomes (M2.T2, D10) -----------------------------------------------------------
+
+
+async def test_outcome_carries_output(db_session: AsyncSession) -> None:
+    outcome, stored, _ = await run(db_session, ScriptedProvider([end_turn("Paris")]))
+    assert outcome.status == "completed"
+    assert outcome.output == "Paris"
+    assert outcome.error is None
+    assert outcome.provider_failure is None
+    assert stored.output == "Paris"
+
+
+async def test_outcome_carries_agent_failure_error(db_session: AsyncSession) -> None:
+    outcome, stored, _ = await run(db_session, ScriptedProvider([response("max_tokens")]))
+    assert outcome.status == "failed"
+    assert outcome.output is None
+    assert outcome.error == "answer truncated at max_tokens"
+    assert outcome.error == stored.error
+    assert outcome.provider_failure is None
+
+
+@pytest.mark.parametrize("kind", ["account", "unavailable"])
+async def test_outcome_provider_failure(db_session: AsyncSession, kind: str) -> None:
+    exc = ProviderAPIError("x", kind=kind)  # type: ignore[arg-type]
+    outcome, stored, spans = await run(db_session, ScriptedProvider([exc]))
+    assert outcome.status == "failed"
+    assert outcome.provider_failure == kind
+    assert outcome.error is not None
+    assert outcome.error.startswith("provider error:")
+    assert outcome.error == stored.error
+    assert outcome.output is None
+    assert_failed(outcome, stored, spans, "provider error: x", "llm")
+
+
+async def test_provider_failure_after_tool_call(db_session: AsyncSession) -> None:
+    provider = ScriptedProvider([tool_use(), ProviderAPIError("down", kind="unavailable")])
+    outcome, _, _ = await run(db_session, provider)
+    assert outcome.status == "failed"
+    assert outcome.provider_failure == "unavailable"
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        ProviderResponseError("anthropic response: unknown content block type 'thinking'"),
+        ProviderAPIError("anthropic API error after 1 attempt: invalid_request_error"),
+    ],
+    ids=["response_error", "api_error_without_kind"],
+)
+async def test_response_error_is_agent_failure(db_session: AsyncSession, exc: Exception) -> None:
+    outcome, _, _ = await run(db_session, ScriptedProvider([exc]))
+    assert outcome.status == "failed"
+    assert outcome.provider_failure is None
+    assert outcome.error == f"provider error: {exc}"
+
+
+async def test_replayed_401_is_account_failure(db_session: AsyncSession) -> None:
+    unauthorized = (
+        401,
+        {"type": "error", "error": {"type": "authentication_error", "message": "bad key"}},
+    )
+    provider = AnthropicProvider(replay_responses(unauthorized), sleep=no_sleep)
+    outcome, _, _ = await run(db_session, provider)
+    assert outcome.provider_failure == "account"
+
+
+async def test_replayed_three_429s_are_unavailable(db_session: AsyncSession) -> None:
+    provider = AnthropicProvider(
+        replay_responses(RATE_LIMITED, RATE_LIMITED, RATE_LIMITED), sleep=no_sleep
+    )
+    outcome, _, _ = await run(db_session, provider)
+    assert outcome.provider_failure == "unavailable"
+
+
+# --- evaluation links (M2.T2; ingest copies them from M2.T1) --------------------------------
+
+
+async def make_run_and_case(
+    session: AsyncSession, version_id: uuid.UUID
+) -> tuple[EvaluationRun, TestCase]:
+    """T1-independent setup: inline rows that satisfy the trace's foreign keys."""
+    dataset = Dataset(name=f"dataset-{uuid.uuid4().hex[:12]}")
+    session.add(dataset)
+    await session.flush()
+    case = TestCase(dataset_id=dataset.id, key="case_001", input=QUESTION)
+    evaluation_run = EvaluationRun(agent_version_id=version_id, dataset_id=dataset.id)
+    session.add_all([case, evaluation_run])
+    await session.flush()
+    return evaluation_run, case
+
+
+async def run_linked(session: AsyncSession) -> tuple[RunOutcome, EvaluationRun, TestCase]:
+    version = await make_agent_version(session)
+    evaluation_run, case = await make_run_and_case(session, version.id)
+    outcome = await run_agent(
+        session=session,
+        provider=ScriptedProvider([end_turn()]),
+        config=AgentConfig.from_version(version),
+        input=QUESTION,
+        evaluation_run_id=evaluation_run.id,
+        test_case_id=case.id,
+    )
+    return outcome, evaluation_run, case
+
+
+async def test_evaluation_ids_set_on_root_span(db_session: AsyncSession) -> None:
+    outcome, evaluation_run, case = await run_linked(db_session)
+    spans = list(await db_session.scalars(select(Span).where(Span.trace_id == outcome.trace_id)))
+    root = root_of(spans)
+    assert root.attributes["agentops.evaluation_run_id"] == str(evaluation_run.id)
+    assert root.attributes["agentops.test_case_id"] == str(case.id)
+    assert all("agentops.evaluation_run_id" not in s.attributes for s in spans if s is not root)
+
+
+async def test_evaluation_ids_omitted_by_default(db_session: AsyncSession) -> None:
+    outcome, _, spans = await run(db_session, ScriptedProvider([end_turn()]))
+    root = root_of(spans)
+    assert "agentops.evaluation_run_id" not in root.attributes
+    assert "agentops.test_case_id" not in root.attributes
+    stored = await db_session.get(Trace, outcome.trace_id)
+    assert stored is not None
+    assert stored.evaluation_run_id is None
+    assert stored.test_case_id is None
+
+
+async def test_trace_linked_to_evaluation(db_session: AsyncSession) -> None:
+    outcome, evaluation_run, case = await run_linked(db_session)
+    stored = await db_session.get(Trace, outcome.trace_id)
+    assert stored is not None
+    assert stored.evaluation_run_id == evaluation_run.id
+    assert stored.test_case_id == case.id
 
 
 # --- no third-party tracing (D6) ------------------------------------------------------------

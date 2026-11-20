@@ -74,6 +74,7 @@ M1 builds that primitive. AgentOps runs an agent built with LangGraph on one inp
 
 7. **Run outcome by stop reason** (Claude's call, 2026-11-19). `failed` means "the run did not produce a usable answer". A poor answer is still `completed`; judging it is M3's job.
    - `tool_use`: the loop continues.
+   - `tool_use` with no tool calls → `failed`: "model stopped for tool_use without calling a tool".
    - `end_turn` and `stop_sequence`: `completed`.
    - `refusal`: `completed`, with the refusal as output and the finish reason on the span. It is an answer, and M3 scores it.
    - `max_tokens`: `failed` ("answer truncated at max_tokens"). A cut-off answer must not look like a real one.
