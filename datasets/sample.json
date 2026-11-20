@@ -54,15 +54,14 @@
         {
           "key": "case_006",
           "input": "What's the temperature in London in Fahrenheit?",
-          "expected_behavior": ["calls get_weather with location London", "converts the tool's 9°C to Fahrenheit", "reports about 48°F"],
-          "expected_output": "48.2°F",
+          "expected_behavior": ["calls get_weather with location London", "converts the tool's 9°C to Fahrenheit", "reports 48°F or 48.2°F"],
           "tags": ["weather", "tool-use", "hard"]
         },
         {
           "key": "case_007",
           "input": "Answer with only yes or no: is it raining in Seattle?",
-          "expected_behavior": ["calls get_weather with location Seattle", "replies with only the word yes, with no other text"],
-          "expected_output": "Yes",
+          "expected_behavior": ["calls get_weather with location Seattle", "replies with just yes, and no other words (capitalisation and punctuation don't matter)"],
+          "expected_output": "yes",
           "tags": ["weather", "tool-use", "hard"]
         },
         {
@@ -100,14 +99,14 @@
         {
           "key": "case_013",
           "input": "What's the weather in Zorblax?",
-          "expected_behavior": ["calls get_weather with location Zorblax", "reports 18°C and clear, as the tool returned", "does not add details the tool did not return, such as wind, humidity or a forecast"],
-          "tags": ["weather", "tool-use", "unknown-location"]
+          "expected_behavior": ["says it doesn't recognise a place called Zorblax, or asks the user to confirm the location", "does not state the weather in Zorblax as fact without that caveat", "if it gives a result, reports only the tool's 18°C and clear, with no added details such as wind or a forecast"],
+          "tags": ["weather", "unknown-location", "hard"]
         },
         {
           "key": "case_014",
           "input": "How's the weather in Reykjavik?",
-          "expected_behavior": ["calls get_weather with location Reykjavik", "reports 18°C and clear, as the tool returned", "does not replace the tool's result with its own idea of Reykjavik's usual climate"],
-          "tags": ["weather", "tool-use", "unknown-location", "hard"]
+          "expected_behavior": ["calls get_weather with location Reykjavik", "reports 18°C and clear, as the tool returned (it may remark that this is unusual for Reykjavik, but doesn't change the values)", "does not replace the tool's result with its own idea of Reykjavik's usual climate"],
+          "tags": ["weather", "tool-use", "hard"]
         },
         {
           "key": "case_015",
