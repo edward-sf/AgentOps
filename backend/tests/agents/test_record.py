@@ -9,7 +9,14 @@ import pytest
 
 from app.agents.providers import record
 from app.config import Settings
-from tests.agents.replay import load_fixture, replay_client, replay_responses
+from tests.agents.replay import (
+    THINKING_TYPES,
+    load_fixture,
+    replay_client,
+    replay_responses,
+    wire_form,
+    with_content,
+)
 
 
 def entries(directory: Path) -> list[Path]:
@@ -67,7 +74,8 @@ async def test_records_every_recordable_scenario(tmp_path: Path) -> None:
     tool_use_block = next(
         b for b in load_fixture("tool_use")["body"]["content"] if b["type"] == "tool_use"
     )
-    assert final_answer["messages"][1]["content"][-1]["id"] == tool_use_block["id"]
+    sent_tool_use = [b for b in final_answer["messages"][1]["content"] if b["type"] == "tool_use"]
+    assert [b["id"] for b in sent_tool_use] == [tool_use_block["id"]]
     assert final_answer["messages"][2]["content"][0]["tool_use_id"] == tool_use_block["id"]
     assert direct_answer["messages"] == [
         {"role": "user", "content": "What is the capital of France?"}
@@ -76,17 +84,35 @@ async def test_records_every_recordable_scenario(tmp_path: Path) -> None:
     assert thinking["messages"] == [{"role": "user", "content": record.THINKING_QUESTION}]
     assert "thinking" not in thinking  # adaptive thinking: the parameter is left out
     thinking_content = load_fixture("thinking_tool_use")["body"]["content"]
-    assert replay["messages"][1] == {"role": "assistant", "content": thinking_content}
+    assert replay["messages"][1] == {"role": "assistant", "content": wire_form(thinking_content)}
     tool_id = next(b["id"] for b in thinking_content if b["type"] == "tool_use")
     assert replay["messages"][2]["content"][0]["tool_use_id"] == tool_id
+
+
+def scenario_responses(*scenarios: str) -> list[tuple[int, dict[str, Any]]]:
+    return [(200, load_fixture(s)["body"]) for s in scenarios]
+
+
+def tool_use_without_thinking() -> tuple[int, dict[str, Any]]:
+    """The `tool_use` fixture with any thinking blocks removed.
+
+    A real recording of `tool_use` may itself contain thinking (adaptive thinking runs on every
+    request), so the no-thinking attempt is built here rather than taken from the fixture.
+    """
+    body = load_fixture("tool_use")["body"]
+    return 200, with_content(body, [b for b in body["content"] if b["type"] not in THINKING_TYPES])
 
 
 async def test_thinking_scenario_retried_until_a_thinking_block(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     captured: list[dict[str, Any]] = []
-    client = replay_client(
-        *FIRST_FOUR, "tool_use", "tool_use", "thinking_tool_use", "final_answer", requests=captured
+    client = replay_responses(
+        *scenario_responses(*FIRST_FOUR),
+        tool_use_without_thinking(),
+        tool_use_without_thinking(),
+        *scenario_responses("thinking_tool_use", "final_answer"),
+        requests=captured,
     )
 
     code = await record.run(client=client, out_dir=tmp_path)
@@ -107,7 +133,11 @@ async def test_no_thinking_block_in_five_attempts_writes_nothing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     captured: list[dict[str, Any]] = []
-    client = replay_client(*FIRST_FOUR, *["tool_use"] * 5, requests=captured)
+    client = replay_responses(
+        *scenario_responses(*FIRST_FOUR),
+        *[tool_use_without_thinking()] * record.THINKING_ATTEMPTS,
+        requests=captured,
+    )
 
     code = await record.run(client=client, out_dir=tmp_path)
 

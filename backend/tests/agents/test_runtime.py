@@ -36,7 +36,17 @@ from tests.agents.fakes import (
     thinking_tool_use,
     tool_use,
 )
-from tests.agents.replay import load_fixture, replay_client, replay_responses
+from tests.agents.replay import (
+    assert_thinking_before_tool_use,
+    expected_text,
+    expected_thinking_blocks,
+    final_answer_layouts,
+    load_fixture,
+    replay_client,
+    replay_responses,
+    thinking_tool_use_layouts,
+    wire_form,
+)
 from tests.factories import make_agent_version
 
 QUESTION = "What's the weather in Seattle?"
@@ -182,18 +192,27 @@ async def test_thinking_block_replayed_unchanged(db_session: AsyncSession) -> No
     assert all("signature" not in json.dumps([s.input, s.output]) for s in llm)
 
 
-async def test_replayed_thinking_tool_use_sends_thinking_back(db_session: AsyncSession) -> None:
+@pytest.mark.parametrize("final_layout", sorted(final_answer_layouts()))
+@pytest.mark.parametrize("tool_layout", sorted(thinking_tool_use_layouts()))
+async def test_replayed_thinking_tool_use_sends_thinking_back(
+    db_session: AsyncSession, tool_layout: str, final_layout: str
+) -> None:
+    tool_body = thinking_tool_use_layouts()[tool_layout]
+    final_body = final_answer_layouts()[final_layout]
     captured: list[dict[str, Any]] = []
-    client = replay_client("thinking_tool_use", "final_answer", requests=captured)
-    outcome, _, spans = await run(db_session, AnthropicProvider(client, sleep=no_sleep))
+    client = replay_responses((200, tool_body), (200, final_body), requests=captured)
+    outcome, stored, spans = await run(db_session, AnthropicProvider(client, sleep=no_sleep))
 
     assert outcome.status == "completed"
-    assert captured[1]["messages"][1] == {
-        "role": "assistant",
-        "content": load_fixture("thinking_tool_use")["body"]["content"],
-    }
+    assert stored.output == (expected_text(final_body) or "")
+    sent = captured[1]["messages"][1]
+    assert sent == {"role": "assistant", "content": wire_form(tool_body["content"])}
+    assert_thinking_before_tool_use(sent["content"])
     llm = of_kind(spans, "llm")
-    assert [s.attributes["agentops.llm.thinking_blocks"] for s in llm] == [1, 0]
+    assert [s.attributes["agentops.llm.thinking_blocks"] for s in llm] == [
+        expected_thinking_blocks(tool_body),
+        expected_thinking_blocks(final_body),
+    ]
 
 
 def stored_model(provider: ScriptedProvider) -> str:
@@ -470,7 +489,7 @@ async def test_replayed_tool_then_answer_completes(db_session: AsyncSession) -> 
     provider = AnthropicProvider(replay_client("tool_use", "final_answer"), sleep=no_sleep)
     outcome, stored, spans = await run(db_session, provider)
     assert outcome.status == "completed"
-    assert stored.output == load_fixture("final_answer")["body"]["content"][0]["text"]
+    assert stored.output == (expected_text(load_fixture("final_answer")["body"]) or "")
     assert Counter(s.kind for s in spans) == {"chain": 1, "llm": 2, "tool": 1}
     assert all(s.attributes["agentops.llm.attempts"] == 1 for s in of_kind(spans, "llm"))
 
