@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 from typing import Any
 
+import httpx2
 import pytest
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -369,3 +370,117 @@ def test_client_emits_no_sdk_spans() -> None:
 
 def test_provider_name() -> None:
     assert AnthropicProvider(make_anthropic_client("k")).name == "anthropic"
+
+
+# --- failure classification (M2 D10) --------------------------------------------------------
+
+
+def error_body(error_type: str, message: str = "nope") -> dict[str, Any]:
+    return {"type": "error", "error": {"type": error_type, "message": message}}
+
+
+@pytest.mark.parametrize(
+    ("status", "error_type"),
+    [
+        (401, "authentication_error"),
+        (403, "permission_error"),
+        (402, "billing_error"),
+    ],
+)
+async def test_kind_account(
+    status: int,
+    error_type: str,
+    exporter: InMemorySpanExporter,
+    tracer_provider: TracerProvider,
+) -> None:
+    sleeps = Sleeps()
+    provider = AnthropicProvider(replay_responses((status, error_body(error_type))), sleep=sleeps)
+
+    with pytest.raises(ProviderAPIError) as excinfo:
+        await complete_in_span(provider, seattle_request(), tracer_provider)
+
+    assert excinfo.value.kind == "account"
+    span = only_span(exporter)
+    assert span.attributes is not None
+    assert span.attributes["agentops.llm.attempts"] == 1
+    assert sleeps.calls == []
+
+
+@pytest.mark.parametrize(
+    ("status", "error_type"),
+    [
+        (400, "billing_error"),
+        (400, "authentication_error"),
+        (400, "permission_error"),
+    ],
+)
+async def test_kind_account_from_error_type_alone(
+    status: int, error_type: str, tracer_provider: TracerProvider
+) -> None:
+    provider = AnthropicProvider(replay_responses((status, error_body(error_type))), sleep=Sleeps())
+    with pytest.raises(ProviderAPIError) as excinfo:
+        await complete_in_span(provider, seattle_request(), tracer_provider)
+    assert excinfo.value.kind == "account"
+
+
+async def test_kind_unavailable_after_retries(tracer_provider: TracerProvider) -> None:
+    client = replay_client("overloaded", "overloaded", "overloaded")
+    provider = AnthropicProvider(client, sleep=Sleeps())
+    with pytest.raises(ProviderAPIError) as excinfo:
+        await complete_in_span(provider, seattle_request(), tracer_provider)
+    assert excinfo.value.kind == "unavailable"
+
+
+@pytest.mark.parametrize(
+    ("status", "error_type"),
+    [(429, "rate_limit_error"), (500, "api_error"), (503, "api_error")],
+)
+async def test_kind_unavailable_for_rate_limit_and_server_errors(
+    status: int, error_type: str, tracer_provider: TracerProvider
+) -> None:
+    body = error_body(error_type)
+    provider = AnthropicProvider(
+        replay_responses((status, body), (status, body), (status, body)), sleep=Sleeps()
+    )
+    with pytest.raises(ProviderAPIError) as excinfo:
+        await complete_in_span(provider, seattle_request(), tracer_provider)
+    assert excinfo.value.kind == "unavailable"
+
+
+def raising_client(exc: Exception) -> Any:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        raise exc
+
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
+    return make_anthropic_client("test-key", http_client=http_client)
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [httpx2.ConnectError("connection refused"), httpx2.ReadTimeout("timed out")],
+    ids=["connection", "timeout"],
+)
+async def test_kind_connection_error(exc: Exception, tracer_provider: TracerProvider) -> None:
+    provider = AnthropicProvider(raising_client(exc), sleep=Sleeps())
+    with pytest.raises(ProviderAPIError) as excinfo:
+        await complete_in_span(provider, seattle_request(), tracer_provider)
+    assert excinfo.value.kind == "unavailable"
+
+
+@pytest.mark.parametrize(
+    ("status", "error_type"),
+    [(400, "invalid_request_error"), (404, "not_found_error"), (413, "request_too_large")],
+)
+async def test_kind_none_for_400(
+    status: int, error_type: str, tracer_provider: TracerProvider
+) -> None:
+    provider = AnthropicProvider(replay_responses((status, error_body(error_type))), sleep=Sleeps())
+    with pytest.raises(ProviderAPIError) as excinfo:
+        await complete_in_span(provider, seattle_request(), tracer_provider)
+    assert excinfo.value.kind is None
+
+
+def test_provider_api_error_kind_defaults_to_none() -> None:
+    assert ProviderAPIError("x").kind is None
+    assert ProviderAPIError("x", kind="account").kind == "account"
+    assert str(ProviderAPIError("x", kind="unavailable")) == "x"
