@@ -61,9 +61,12 @@ def heading_anchor(heading: str) -> str:
 
 
 def deviation_notes(text: str) -> str:
-    """Notes for the template's `## Deviations from plan` section, minus their own heading."""
-    lines = text.strip().splitlines()
-    if lines and re.match(r"^#{1,6}\s+deviations?\b", lines[0], re.IGNORECASE):
+    """Notes for the template's `## Deviations from plan` section, minus their own heading.
+
+    The heading is dropped only when it is the first non-blank line (a BOM is ignored).
+    """
+    lines = text.lstrip("\ufeff").strip().splitlines()
+    if lines and re.match(r"^#{1,6}\s+deviations?\b", lines[0].strip(), re.IGNORECASE):
         lines = lines[1:]
     return "\n".join(lines).strip() or "None."
 
@@ -137,8 +140,15 @@ def load_plan(milestone: int, base: str | None = None) -> list[Task]:
 
 
 def task_for(task_id: str) -> Task | None:
+    """The task from its milestone's plan: the milestone branch, or `main` once it is deleted.
+
+    A milestone branch is deleted after its milestone PR merges, so a dependency on an
+    earlier milestone is read from `main`, where that plan now lives.
+    """
     m = int(task_id[1 : task_id.index(".")])
-    return next((t for t in load_plan(m) if t.id == task_id), None)
+    branch = f"milestone/m{m}"
+    base = branch if milestone.remote_branch_exists(branch) else "main"
+    return next((t for t in load_plan(m, base) if t.id == task_id), None)
 
 
 def get_issue(number: int) -> dict[str, Any]:
@@ -296,9 +306,8 @@ def cmd_issue_pr(args: argparse.Namespace) -> int:
     if not branch.startswith(f"{args.issue}-"):
         raise Refusal([f"current branch '{branch}' is not an issue-{args.issue} branch"])
     root = repo_root()
-    plan_path = find_plan(milestone, root)
-    task = next((t for t in parse_plan(plan_path.read_text()) if t.id == task_id), None)
-    rel = plan_path.relative_to(root).as_posix()
+    rel, text = plan_at_origin(milestone)  # the base's plan, not local edits
+    task = next((t for t in parse_plan(text) if t.id == task_id), None)
     link = f"https://github.com/{OWNER}/{REPO}/blob/milestone/m{milestone}/{rel}"
     if task:
         link += "#" + heading_anchor(f"{task.id} {task.title}")
