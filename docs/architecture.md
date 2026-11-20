@@ -83,7 +83,7 @@ erDiagram
         text error
         timestamptz started_at
         timestamptz completed_at
-        int total_cases "nullable, set on first claim"
+        int total_cases "nullable, set when the runner starts executing"
         timestamptz heartbeat_at "nullable"
         bool cancel_requested "default false"
         timestamptz created_at
@@ -211,7 +211,7 @@ All routes live under `/api/v1`, except health.
 | `POST /api/v1/runs` | Body `{agent_version_id, input}`. Runs the version synchronously and returns `201 {trace_id, status}`, where `status` is `completed` or `failed`. A failed run is still `201`; the trace says why. `404` unknown version; `422` unknown tool, unsupported provider or invalid parameters; `503` `ANTHROPIC_API_KEY` not set. These errors create no trace. |
 | `POST /api/v1/evaluation-runs` | Body `{agent_version_id, dataset_id}`. Queues a run and returns `202` with it (`status: pending`). Nothing executes in the request: a worker claims the run. `404` unknown version or dataset; `422` a dataset with no test cases, or a version with an unknown tool, unsupported provider or invalid parameters. These errors create no run. The API key isn't checked here; a worker without one ends the run `failed`. |
 | `GET /api/v1/evaluation-runs` | List runs, newest first. Filters: `agent_version_id`, `dataset_id`, `status`. |
-| `GET /api/v1/evaluation-runs/{id}` | Read a run with its progress: `total_cases` (set when a worker first claims it) and `counts: {completed, failed, error}`, zeros included. |
+| `GET /api/v1/evaluation-runs/{id}` | Read a run with its progress: `total_cases` (set by the runner when it starts executing the run) and `counts: {completed, failed, error}`, zeros included. |
 | `GET /api/v1/evaluation-runs/{id}/results` | The run's results ordered by `case_key`, each with the test case snapshot, `status`, `output`, `error` and `trace_id`. Filter: `status`. |
 | `POST /api/v1/evaluation-runs/{id}/cancel` | A `pending` run becomes `cancelled`; a `running` run gets `cancel_requested: true` and its worker stops it. Returns the run. `409` if it has already finished. |
 | `GET /api/v1/traces` | List traces, newest first. Filters: `agent_version_id`, `status` (`running`, `completed` or `failed`). |
