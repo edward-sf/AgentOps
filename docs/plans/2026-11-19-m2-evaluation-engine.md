@@ -418,6 +418,32 @@
 
 ---
 
+### M2.T11 Adapter: parse and replay thinking blocks
+
+**Depends on:** none
+**Checkpoint**
+
+**Goal:** Fix the bug that the author's M2 `make eval` run found (run `648a1255`: 5 of 26 cases failed with `unknown content block type 'thinking'`). On `claude-sonnet-5-5`, adaptive thinking is on whenever the request omits `thinking`, and the model sometimes returns `thinking` blocks. The M1 adapter accepts only `text` and `tool_use`. In a tool loop, thinking blocks must be sent back unchanged in the assistant turn, in their original order. This is a checkpoint because the author records the new fixture with `make record` (paid) before it merges, as in M1.T1.
+
+**Acceptance criteria**
+- [ ] `parse_message` accepts `thinking` and `redacted_thinking` blocks. They never become part of `ModelResponse.text`. Any other unknown block type still raises `ProviderResponseError` (M1 D3).
+- [ ] `ModelResponse` and `AssistantTurn` carry the assistant content exactly as the API returned it: `raw_content: tuple[dict[str, Any], ...]`, every block including thinking with its `signature`, in order. `to_anthropic_kwargs` sends an `AssistantTurn` that has `raw_content` back verbatim. Turns built without it (tests, older code) are rebuilt from `text` and `tool_calls` as today.
+- [ ] The `llm` span records `agentops.llm.thinking_blocks` (int), the count of thinking and redacted blocks. Thinking text is not stored, since the default display is omitted anyway.
+- [ ] A runtime test with `ScriptedProvider` covers the replay. A `tool_use` response carrying a thinking block, then a final answer: the second request's assistant turn contains the thinking block unchanged, before the `tool_use` block. The run is `completed`.
+- [ ] Adapter replay tests:
+  - a recorded response with a thinking block, then tool use, parses to the right `tool_calls` with `raw_content` intact
+  - a `redacted_thinking` block parses
+  - an unknown block type (for example `"mystery"`) still raises
+- [ ] `RECORDABLE_SCENARIOS` gains `thinking_tool_use`. `make record` retries that scenario (up to 5 attempts) until the response contains a thinking block, and fails clearly if none appears. The fixture is synthetic until the author records it. The author runs `make record` on the PR branch and commits the recorded fixture before approving. `test_recordable_fixtures_are_recorded` must then pass.
+- [ ] After merge, the author re-runs `make eval`. No result fails with `unknown content block type`.
+- [ ] The author approves the PR (`checkpoint-approved` label on the issue) before it merges.
+
+**Files:**
+- Modify: `backend/app/agents/providers/base.py`, `backend/app/agents/providers/anthropic.py`, `backend/app/agents/providers/record.py`, `backend/app/agents/graph.py`, `backend/tests/agents/test_anthropic_provider.py`, `backend/tests/agents/test_runtime.py`, `backend/tests/agents/test_record.py`, `backend/tests/agents/test_fixture_guard.py`, `backend/tests/agents/fakes.py`
+- Create: `backend/tests/agents/fixtures/anthropic/thinking_tool_use.json` (synthetic, then recorded by the author)
+
+---
+
 ## Milestone finish (Orchestrator)
 
 1. On `milestone/m2`, run `make setup db migrate seed`, then `make check`.
