@@ -86,6 +86,18 @@ async def test_duplicate_case_key_is_409(client: AsyncClient, dataset: dict[str,
     assert r.json() == {"detail": "Test case key already exists in this dataset"}
 
 
+async def test_rename_case_key_to_existing_409(
+    client: AsyncClient, dataset: dict[str, Any]
+) -> None:
+    base = f"{DS}/{dataset['id']}/test-cases"
+    await client.post(base, json={"key": "a", "input": "q"})
+    b = (await client.post(base, json={"key": "b", "input": "q"})).json()
+    r = await client.patch(f"{base}/{b['id']}", json={"key": "a"})
+    assert r.status_code == 409
+    assert r.json() == {"detail": "Test case key already exists in this dataset"}
+    assert (await client.get(f"{base}/{b['id']}")).json()["key"] == "b"
+
+
 async def test_case_in_unknown_dataset_is_404(client: AsyncClient) -> None:
     r = await client.post(f"{DS}/{uuid4()}/test-cases", json={"key": "k", "input": "q"})
     assert r.status_code == 404

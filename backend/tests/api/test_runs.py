@@ -224,6 +224,20 @@ async def test_missing_key_503(settings: Settings, db_session: AsyncSession) -> 
         )
 
 
+async def test_empty_key_503(settings: Settings, db_session: AsyncSession) -> None:
+    """The real factory: an empty key counts as unset. `model_copy` skips validation."""
+    version = await make_agent_version(db_session)
+    empty = settings.model_copy(update={"anthropic_api_key": SecretStr("")})
+    async with real_factory_client(empty, db_session) as client:
+        await assert_rejected(
+            client,
+            db_session,
+            {"agent_version_id": str(version.id), "input": "hi"},
+            503,
+            "ANTHROPIC_API_KEY is not set",
+        )
+
+
 async def test_empty_input_422(
     client: AsyncClient, db_session: AsyncSession, no_model: ScriptedProvider
 ) -> None:
