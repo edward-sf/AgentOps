@@ -30,7 +30,7 @@ class EvaluationRunRead(BaseModel):
     status: EvaluationRunStatus
     error: str | None
     total_cases: int | None
-    """Set when a worker first claims the run; null while it is `pending`."""
+    """Set by the runner when it starts executing the run; null until then."""
     cancel_requested: bool
     started_at: datetime | None
     completed_at: datetime | None

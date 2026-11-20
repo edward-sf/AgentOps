@@ -55,7 +55,7 @@ class EvaluationRun(UUIDPrimaryKey, Base):
     error: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # Set on the first claim: how many cases the run executes (M2 spec, decision 8).
+    # Set by the runner when it starts executing: how many cases the run has (M2 spec, D8).
     total_cases: Mapped[int | None] = mapped_column(Integer)
     # Refreshed by the worker while it works; a stale heartbeat makes the run reclaimable.
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
