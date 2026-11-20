@@ -209,13 +209,18 @@ All routes live under `/api/v1`, except health.
 | `POST /api/v1/datasets/{id}/test-cases:bulk` | Create 1 to 1000 test cases. All-or-nothing: a duplicate key in the request or against existing cases returns `409` and inserts nothing. |
 | `GET`, `PATCH`, `DELETE /api/v1/datasets/{id}/test-cases/{case_id}` | Read, update and delete a test case. |
 | `POST /api/v1/runs` | Body `{agent_version_id, input}`. Runs the version synchronously and returns `201 {trace_id, status}`, where `status` is `completed` or `failed`. A failed run is still `201`; the trace says why. `404` unknown version; `422` unknown tool, unsupported provider or invalid parameters; `503` `ANTHROPIC_API_KEY` not set. These errors create no trace. |
+| `POST /api/v1/evaluation-runs` | Body `{agent_version_id, dataset_id}`. Queues a run and returns `202` with it (`status: pending`). Nothing executes in the request: a worker claims the run. `404` unknown version or dataset; `422` a dataset with no test cases, or a version with an unknown tool, unsupported provider or invalid parameters. These errors create no run. The API key isn't checked here; a worker without one ends the run `failed`. |
+| `GET /api/v1/evaluation-runs` | List runs, newest first. Filters: `agent_version_id`, `dataset_id`, `status`. |
+| `GET /api/v1/evaluation-runs/{id}` | Read a run with its progress: `total_cases` (set when a worker first claims it) and `counts: {completed, failed, error}`, zeros included. |
+| `GET /api/v1/evaluation-runs/{id}/results` | The run's results ordered by `case_key`, each with the test case snapshot, `status`, `output`, `error` and `trace_id`. Filter: `status`. |
+| `POST /api/v1/evaluation-runs/{id}/cancel` | A `pending` run becomes `cancelled`; a `running` run gets `cancel_requested: true` and its worker stops it. Returns the run. `409` if it has already finished. |
 | `GET /api/v1/traces` | List traces, newest first. Filters: `agent_version_id`, `status` (`running`, `completed` or `failed`). |
 | `GET /api/v1/traces/{id}` | Read a trace and its spans as a tree: `spans` holds the root spans, each with nested `children` ordered by `started_at`. A span whose parent isn't in the trace is returned as a root. |
 
 Conventions:
 
 - Lists take `limit` (default 50, max 200) and `offset`, and return `{items, total, limit, offset}`.
-- Errors use `{"detail": ...}`: `404` not found, `409` uniqueness or referential conflict, `422` validation, `503` server not configured (runs only).
+- Errors use `{"detail": ...}`: `404` not found, `409` uniqueness or referential conflict, or cancelling a finished evaluation run, `422` validation, `503` server not configured (runs only).
 
 ## Agent runs
 
@@ -228,6 +233,15 @@ Conventions:
 5. The finished spans go to `ingest_spans`, which writes the Trace and Span rows in the request's transaction. The endpoint returns `201 {trace_id, status}`.
 
 `make smoke` exercises this path against the real API (see the README).
+
+## Evaluation run queue
+
+`evaluation_runs` is the queue the worker reads ([`app/evaluation/queue.py`](../backend/app/evaluation/queue.py)). Every timestamp comparison uses the database's `now()`.
+
+- `claim_next` takes the oldest claimable run with `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent workers never claim the same run. Claimable means `pending` without `cancel_requested`, or `running` with `heartbeat_at` older than `EVAL_STALE_AFTER_SECONDS` (default 60). The claim sets `running`, `heartbeat_at`, and `started_at` on the first claim only.
+- `heartbeat` refreshes `heartbeat_at` and returns `cancel_requested`.
+- `finish` ends a `running` run as `completed`, `failed` or `cancelled`, with `completed_at`.
+- Cancel is one conditional `UPDATE … WHERE status IN ('pending', 'running')`. If a claim holds the row, the cancel waits and then applies to the row the claim committed, so it sets `cancel_requested` on the now `running` run instead of being lost.
 
 ## Sample data
 

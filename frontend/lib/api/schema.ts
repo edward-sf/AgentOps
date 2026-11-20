@@ -167,6 +167,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evaluation-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Evaluation Runs
+         * @description Newest first.
+         */
+        get: operations["list_evaluation_runs_api_v1_evaluation_runs_get"];
+        put?: never;
+        /**
+         * Create Evaluation Run
+         * @description Queue a `pending` run for a worker. Nothing executes in the request (D1).
+         */
+        post: operations["create_evaluation_run_api_v1_evaluation_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evaluation-runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Evaluation Run */
+        get: operations["get_evaluation_run_api_v1_evaluation_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evaluation-runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Evaluation Run
+         * @description A `pending` run becomes `cancelled`; a `running` one gets `cancel_requested` and the
+         *     worker stops it (D7). 409 if the run has already finished.
+         */
+        post: operations["cancel_evaluation_run_api_v1_evaluation_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evaluation-runs/{run_id}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Evaluation Results
+         * @description Ordered by `case_key`.
+         */
+        get: operations["list_evaluation_results_api_v1_evaluation_runs__run_id__results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs": {
         parameters: {
             query?: never;
@@ -368,6 +450,114 @@ export interface components {
             /** Name */
             name?: string | null;
         };
+        /** EvaluationResultRead */
+        EvaluationResultRead: {
+            /** Case Expected Behavior */
+            case_expected_behavior: string[];
+            /** Case Expected Output */
+            case_expected_output: string | null;
+            /** Case Input */
+            case_input: string;
+            /** Case Key */
+            case_key: string;
+            /** Case Tags */
+            case_tags: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error */
+            error: string | null;
+            /**
+             * Evaluation Run Id
+             * Format: uuid
+             */
+            evaluation_run_id: string;
+            /** Explanation */
+            explanation: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Output */
+            output: string | null;
+            /** Passed */
+            passed: boolean | null;
+            /** Score */
+            score: number | null;
+            /** Scores */
+            scores: {
+                [key: string]: unknown;
+            };
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "completed" | "failed" | "error";
+            /**
+             * Test Case Id
+             * Format: uuid
+             */
+            test_case_id: string;
+            /** Trace Id */
+            trace_id: string | null;
+        };
+        /** EvaluationRunCreate */
+        EvaluationRunCreate: {
+            /**
+             * Agent Version Id
+             * Format: uuid
+             */
+            agent_version_id: string;
+            /**
+             * Dataset Id
+             * Format: uuid
+             */
+            dataset_id: string;
+        };
+        /** EvaluationRunRead */
+        EvaluationRunRead: {
+            /**
+             * Agent Version Id
+             * Format: uuid
+             */
+            agent_version_id: string;
+            /** Cancel Requested */
+            cancel_requested: boolean;
+            /** Completed At */
+            completed_at: string | null;
+            counts: components["schemas"]["ResultCounts"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Dataset Id
+             * Format: uuid
+             */
+            dataset_id: string;
+            /** Error */
+            error: string | null;
+            /** Heartbeat At */
+            heartbeat_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Started At */
+            started_at: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "running" | "completed" | "failed" | "cancelled";
+            /** Total Cases */
+            total_cases: number | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -406,6 +596,28 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** Page[EvaluationResultRead] */
+        Page_EvaluationResultRead_: {
+            /** Items */
+            items: components["schemas"]["EvaluationResultRead"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /** Page[EvaluationRunRead] */
+        Page_EvaluationRunRead_: {
+            /** Items */
+            items: components["schemas"]["EvaluationRunRead"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /** Page[TestCaseRead] */
         Page_TestCaseRead_: {
             /** Items */
@@ -427,6 +639,27 @@ export interface components {
             offset: number;
             /** Total */
             total: number;
+        };
+        /**
+         * ResultCounts
+         * @description How many results the run has, by status. Every status is present, zero included.
+         */
+        ResultCounts: {
+            /**
+             * Completed
+             * @default 0
+             */
+            completed: number;
+            /**
+             * Error
+             * @default 0
+             */
+            error: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
         };
         /** RunCreate */
         RunCreate: {
@@ -1253,6 +1486,171 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TestCaseRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_evaluation_runs_api_v1_evaluation_runs_get: {
+        parameters: {
+            query?: {
+                agent_version_id?: string | null;
+                dataset_id?: string | null;
+                status?: ("pending" | "running" | "completed" | "failed" | "cancelled") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_EvaluationRunRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_evaluation_run_api_v1_evaluation_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvaluationRunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationRunRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_evaluation_run_api_v1_evaluation_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationRunRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_evaluation_run_api_v1_evaluation_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationRunRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_evaluation_results_api_v1_evaluation_runs__run_id__results_get: {
+        parameters: {
+            query?: {
+                status?: ("completed" | "failed" | "error") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_EvaluationResultRead_"];
                 };
             };
             /** @description Validation Error */
