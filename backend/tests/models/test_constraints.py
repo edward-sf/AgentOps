@@ -16,6 +16,7 @@ from app.models import (
     TestCase,
     Trace,
 )
+from tests import factories
 
 
 def uid() -> str:
@@ -50,6 +51,24 @@ async def make_case(s: AsyncSession, ds: Dataset, key: str = "case_001") -> Test
     s.add(tc)
     await s.flush()
     return tc
+
+
+def snapshot(case: TestCase) -> dict[str, object]:
+    """The case-snapshot columns a result must carry (spec D2)."""
+    return {
+        "case_key": case.key,
+        "case_input": case.input,
+        "case_expected_behavior": list(case.expected_behavior or []),
+        "case_expected_output": case.expected_output,
+        "case_tags": list(case.tags or []),
+    }
+
+
+async def result_parents(s: AsyncSession) -> tuple[EvaluationRun, TestCase]:
+    dataset = await factories.make_dataset(s, cases=1)
+    run = await factories.make_evaluation_run(s, dataset=dataset)
+    case = (await s.execute(select(TestCase).where(TestCase.dataset_id == dataset.id))).scalar_one()
+    return run, case
 
 
 async def count(s: AsyncSession, model: type) -> int:
@@ -121,7 +140,15 @@ async def test_deleting_test_case_referenced_by_result_is_restricted(
     run = EvaluationRun(agent_version_id=version.id, dataset_id=ds.id)
     db_session.add(run)
     await db_session.flush()
-    db_session.add(EvaluationResult(evaluation_run_id=run.id, test_case_id=case.id, passed=True))
+    db_session.add(
+        EvaluationResult(
+            evaluation_run_id=run.id,
+            test_case_id=case.id,
+            status="error",
+            error="boom",
+            **snapshot(case),
+        )
+    )
     await db_session.flush()
     with pytest.raises(IntegrityError, match="fk_evaluation_results_test_case_id_test_cases"):
         async with db_session.begin_nested():
@@ -210,6 +237,110 @@ async def test_run_status_check_rejects_unknown(db_session: AsyncSession) -> Non
             await db_session.flush()
 
 
+async def test_result_error_may_omit_trace(db_session: AsyncSession) -> None:
+    run, case = await result_parents(db_session)
+    result = EvaluationResult(
+        evaluation_run_id=run.id,
+        test_case_id=case.id,
+        status="error",
+        error="provider unavailable",
+        **snapshot(case),
+    )
+    db_session.add(result)
+    await db_session.flush()
+    assert result.trace_id is None
+    assert result.passed is None
+
+
+@pytest.mark.parametrize("status", ["completed", "failed"])
+async def test_result_completed_requires_trace(db_session: AsyncSession, status: str) -> None:
+    run, case = await result_parents(db_session)
+    with pytest.raises(IntegrityError, match="ck_evaluation_results_trace_required"):
+        async with db_session.begin_nested():
+            db_session.add(
+                EvaluationResult(
+                    evaluation_run_id=run.id, test_case_id=case.id, status=status, **snapshot(case)
+                )
+            )
+            await db_session.flush()
+
+
+async def test_result_completed_with_trace_is_stored(db_session: AsyncSession) -> None:
+    run, case = await result_parents(db_session)
+    trace = await factories.make_trace(db_session, evaluation_run_id=run.id, test_case_id=case.id)
+    result = EvaluationResult(
+        evaluation_run_id=run.id,
+        test_case_id=case.id,
+        trace_id=trace.id,
+        status="completed",
+        output=trace.output,
+        **snapshot(case),
+    )
+    db_session.add(result)
+    await db_session.flush()
+    await db_session.refresh(result)
+    assert result.case_key == "case_001"
+    assert result.case_expected_behavior == ["does the thing"]
+    assert result.case_tags == []
+    assert result.scores == {}
+
+
+async def test_result_status_check(db_session: AsyncSession) -> None:
+    run, case = await result_parents(db_session)
+    with pytest.raises(IntegrityError, match="ck_evaluation_results_status"):
+        async with db_session.begin_nested():
+            db_session.add(
+                EvaluationResult(
+                    evaluation_run_id=run.id, test_case_id=case.id, status="ok", **snapshot(case)
+                )
+            )
+            await db_session.flush()
+
+
+async def test_result_passed_nullable(db_session: AsyncSession) -> None:
+    run, case = await result_parents(db_session)
+    trace = await factories.make_trace(db_session)
+    result = EvaluationResult(
+        evaluation_run_id=run.id,
+        test_case_id=case.id,
+        trace_id=trace.id,
+        status="failed",
+        error="step limit",
+        passed=None,
+        **snapshot(case),
+    )
+    db_session.add(result)
+    await db_session.flush()
+    await db_session.refresh(result)
+    assert result.passed is None
+
+
+async def test_run_queue_column_defaults(db_session: AsyncSession) -> None:
+    run = await factories.make_evaluation_run(db_session)
+    await db_session.refresh(run)
+    assert run.status == "pending"
+    assert run.total_cases is None
+    assert run.heartbeat_at is None
+    assert run.cancel_requested is False
+
+
+async def test_run_claim_index(db_session: AsyncSession) -> None:
+    definition = (
+        await db_session.execute(
+            text("SELECT indexdef FROM pg_indexes WHERE indexname = :name"),
+            {"name": "ix_evaluation_runs_status_created_at"},
+        )
+    ).scalar_one()
+    assert "(status, created_at)" in definition
+
+
+def test_status_tuples_match_checks() -> None:
+    from app.models.evaluation import RESULT_STATUSES, RUN_STATUSES
+
+    assert RESULT_STATUSES == ("completed", "failed", "error")
+    assert RUN_STATUSES == ("pending", "running", "completed", "failed", "cancelled")
+
+
 async def test_updated_at_is_advanced_by_database_trigger(db_session: AsyncSession) -> None:
     agent = await make_agent(db_session)
     before = (
@@ -292,6 +423,8 @@ async def test_exact_check_and_unique_constraint_names(db_session: AsyncSession)
     assert await names("c") == {
         "ck_agent_versions_provider",
         "ck_evaluation_runs_status",
+        "ck_evaluation_results_status",
+        "ck_evaluation_results_trace_required",
         "ck_traces_status",
         "ck_spans_kind",
         "ck_spans_status",
