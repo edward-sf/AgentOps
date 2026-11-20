@@ -13,8 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.config import AgentConfig
-from app.agents.providers.anthropic import AnthropicProvider
+from app.agents.providers.anthropic import AnthropicProvider, to_anthropic_kwargs
 from app.agents.providers.base import (
+    AssistantTurn,
     ModelRequest,
     ModelResponse,
     ProviderAPIError,
@@ -27,7 +28,14 @@ from app.agents.runtime import RunOutcome, run_agent
 from app.models import Dataset, EvaluationRun, Span, TestCase, Trace
 from app.observability.tracing import RunTracer
 from app.services.traces import get_trace_detail
-from tests.agents.fakes import ScriptedProvider, end_turn, response, tool_use
+from tests.agents.fakes import (
+    THINKING_BLOCK,
+    ScriptedProvider,
+    end_turn,
+    response,
+    thinking_tool_use,
+    tool_use,
+)
 from tests.agents.replay import load_fixture, replay_client, replay_responses
 from tests.factories import make_agent_version
 
@@ -151,6 +159,41 @@ async def test_tool_then_answer_completes(db_session: AsyncSession) -> None:
     # Spans nest in model → tool → model order under the root.
     assert llm[0].ended_at <= tool.started_at
     assert tool.ended_at <= llm[1].started_at
+
+
+async def test_thinking_block_replayed_unchanged(db_session: AsyncSession) -> None:
+    first = thinking_tool_use()
+    provider = ScriptedProvider([first, end_turn()])
+
+    outcome, _, spans = await run(db_session, provider)
+
+    assert outcome.status == "completed"
+    assistant = provider.requests[1].turns[1]
+    assert isinstance(assistant, AssistantTurn)
+    assert assistant.raw_content == first.raw_content
+    assert assistant.raw_content[0] == THINKING_BLOCK
+    sent = to_anthropic_kwargs(provider.requests[1])["messages"][1]
+    assert sent == {"role": "assistant", "content": list(first.raw_content)}
+    assert [b["type"] for b in sent["content"]] == ["thinking", "tool_use"]
+
+    llm = of_kind(spans, "llm")
+    assert [s.attributes["agentops.llm.thinking_blocks"] for s in llm] == [1, 0]
+    # Thinking content and signatures are not stored on spans.
+    assert all("signature" not in json.dumps([s.input, s.output]) for s in llm)
+
+
+async def test_replayed_thinking_tool_use_sends_thinking_back(db_session: AsyncSession) -> None:
+    captured: list[dict[str, Any]] = []
+    client = replay_client("thinking_tool_use", "final_answer", requests=captured)
+    outcome, _, spans = await run(db_session, AnthropicProvider(client, sleep=no_sleep))
+
+    assert outcome.status == "completed"
+    assert captured[1]["messages"][1] == {
+        "role": "assistant",
+        "content": load_fixture("thinking_tool_use")["body"]["content"],
+    }
+    llm = of_kind(spans, "llm")
+    assert [s.attributes["agentops.llm.thinking_blocks"] for s in llm] == [1, 0]
 
 
 def stored_model(provider: ScriptedProvider) -> str:

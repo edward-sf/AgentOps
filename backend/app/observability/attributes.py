@@ -25,6 +25,9 @@ ERROR = "agentops.error"
 """Root span only: why the run failed. Becomes `Trace.error`."""
 LLM_ATTEMPTS = "agentops.llm.attempts"
 """`llm` spans: how many API attempts the call took, retries included."""
+LLM_THINKING_BLOCKS = "agentops.llm.thinking_blocks"
+"""`llm` spans: how many `thinking` and `redacted_thinking` blocks the response had. Their
+content is not stored (M2.T11)."""
 
 # gen_ai.* — OpenTelemetry GenAI semantic conventions.
 GEN_AI_OPERATION = "gen_ai.operation.name"

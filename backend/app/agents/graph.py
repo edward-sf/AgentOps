@@ -141,6 +141,7 @@ def build_graph(
                     attr.GEN_AI_INPUT_TOKENS: response.input_tokens,
                     attr.GEN_AI_OUTPUT_TOKENS: response.output_tokens,
                     attr.GEN_AI_FINISH_REASONS: [response.stop_reason],
+                    attr.LLM_THINKING_BLOCKS: response.thinking_blocks,
                     attr.OUTPUT: json.dumps(
                         {
                             "text": response.text,
@@ -154,9 +155,15 @@ def build_graph(
                 _fail(span, failure)
             else:
                 span.set_status(Status(StatusCode.OK))
+        # Append only: earlier turns, and the raw content with its thinking blocks, are replayed
+        # unchanged on every later request (M2.T11).
         turns = [
             *state["turns"],
-            AssistantTurn(text=response.text, tool_calls=response.tool_calls),
+            AssistantTurn(
+                text=response.text,
+                tool_calls=response.tool_calls,
+                raw_content=response.raw_content,
+            ),
         ]
         return {
             "turns": turns,
