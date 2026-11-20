@@ -17,12 +17,24 @@ make setup             # install backend and frontend dependencies
 make db                # start Postgres
 make migrate           # apply migrations
 make seed              # load sample data
-make dev               # run the API and the web app
+make dev               # run the API, the web app and the evaluation worker
 ```
 
 Then open http://localhost:3000.
 
 To run everything in Docker instead, use `make up` (and `make down` to stop).
+
+### The evaluation worker
+
+`POST /api/v1/evaluation-runs` only queues a `pending` run. The worker (`python -m app.worker`) claims runs from the `evaluation_runs` table one at a time and executes their cases. `make dev` starts it; `make dev-worker` runs it alone, restarting on code changes. In Docker it is the `worker` service of the `full` profile. More than one worker can run at once.
+
+Each case it executes calls the model API, so it needs `ANTHROPIC_API_KEY` and costs money. Without the key, every run it claims ends `failed`. Its settings, all optional:
+
+- `EVAL_CONCURRENCY` (default 4): how many cases of a run execute at once.
+- `EVAL_STALE_AFTER_SECONDS` (default 60): a `running` run whose heartbeat is older than this is reclaimed by another worker.
+- `EVAL_POLL_INTERVAL_SECONDS` (default 1): how long an idle worker waits before polling again.
+
+On SIGTERM or Ctrl-C it stops claiming, lets the cases in flight finish, and exits. The run it was executing stays `running` and is resumed after `EVAL_STALE_AFTER_SECONDS`, skipping the cases that already have results.
 
 `make check` runs every check CI runs (it needs `make db`). No check calls a model API or needs `ANTHROPIC_API_KEY`.
 
