@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 from pydantic import SecretStr
 
-from app import smoke
+from app import cli_support, smoke
 from app.agents.providers.base import ProviderAPIError
 from app.config import Settings
 from tests.agents.fakes import ScriptedProvider, end_turn, tool_use
@@ -27,7 +27,7 @@ async def test_refuses_with_empty_key(settings: Settings, capsys: Any) -> None:
 
 
 async def seed_weather_bot(client: AsyncClient, parameters: dict[str, Any]) -> None:
-    r = await client.post("/api/v1/agents", json={"name": smoke.AGENT_NAME})
+    r = await client.post("/api/v1/agents", json={"name": cli_support.AGENT_NAME})
     assert r.status_code == 201, r.text
     r = await client.post(
         f"/api/v1/agents/{r.json()['id']}/versions",
@@ -92,4 +92,4 @@ async def test_pre_m1_seed_gets_reseed_hint(app: FastAPI, client: AsyncClient) -
 
     assert code == 1
     assert "temperature" in err
-    assert err.splitlines()[-1] == smoke.RESEED_HINT
+    assert err.splitlines()[-1] == cli_support.RESEED_HINT
