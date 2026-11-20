@@ -40,9 +40,10 @@ On SIGTERM or Ctrl-C it stops claiming, lets the cases in flight finish, and exi
 
 ### Agent runs and the API key
 
-Two targets call the real Anthropic API, cost money and need `ANTHROPIC_API_KEY`. Neither runs in `make check` or CI.
+Three targets call the real Anthropic API, cost money and need `ANTHROPIC_API_KEY`. None runs in `make check` or CI.
 
 - `make smoke`: runs the seeded `weather-bot` v1 on "Find the weather in Seattle" through `POST /api/v1/runs` (two model calls) and prints the stored span tree. It needs `make db migrate seed`. It exits 1 if the run doesn't complete with a tool span, and 2 without the key.
+- `make eval` (author only): submits the seeded `weather-basics` dataset (26 cases) against `weather-bot` v1 through `POST /api/v1/evaluation-runs`, executes the run in process with the worker loop, and prints one line per result (case key, status, trace id, and the first 80 characters of the answer or error), then the counts. Each case makes one or more model calls, so a run costs roughly 50–80 model calls. It needs `make db migrate seed`, and executes any run queued earlier on the same database first. It exits 0 if the run ends `completed` with no `error` result, 1 otherwise, and 2 without the key (before anything is submitted).
 - `make record` (author only): re-records the Anthropic adapter fixtures in `backend/tests/agents/fixtures/anthropic/`.
 
 Use a dedicated key with a spend limit. Keep it out of your shell history: store it once in the macOS Keychain (the command prompts for the key), then read it from there for each run.
@@ -50,6 +51,7 @@ Use a dedicated key with a spend limit. Keep it out of your shell history: store
 ```
 security add-generic-password -a "$USER" -s anthropic-api-key -w
 ANTHROPIC_API_KEY="$(security find-generic-password -s anthropic-api-key -w)" make smoke
+ANTHROPIC_API_KEY="$(security find-generic-password -s anthropic-api-key -w)" make eval     # author only
 ANTHROPIC_API_KEY="$(security find-generic-password -s anthropic-api-key -w)" make record   # author only
 ```
 

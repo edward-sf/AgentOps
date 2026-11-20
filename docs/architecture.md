@@ -1,6 +1,6 @@
 # Architecture
 
-AgentOps is an evaluation and monitoring platform for AI agents. This page describes the M0 foundation: how the pieces fit together, the data model, and the API. The design rationale lives in [the M0 spec](specs/2026-11-17-m0-architecture-design.md).
+AgentOps is an evaluation and monitoring platform for AI agents. This page describes how the pieces fit together, the data model, the API, agent runs (M1) and evaluation runs (M2). The design rationale lives in the specs: [M0](specs/2026-11-17-m0-architecture-design.md), [M1](specs/2026-11-19-m1-agent-execution-tracing-design.md) and [M2](specs/2026-11-19-m2-evaluation-engine-design.md).
 
 ## Overview
 
@@ -9,11 +9,15 @@ flowchart LR
     Browser["Browser"] --> Web["Next.js frontend<br/>:3000"]
     Web -->|"HTTP /api/v1"| API["FastAPI backend<br/>:8000"]
     API -->|"async SQLAlchemy"| DB[("PostgreSQL 17<br/>:5432")]
+    Worker["Evaluation worker<br/>python -m app.worker"] -->|"claims runs, stores results"| DB
+    API -.->|"Anthropic API<br/>(POST /api/v1/runs)"| Model(["Model provider"])
+    Worker -.->|"Anthropic API<br/>(one agent run per case)"| Model
 ```
 
 - The **frontend** (Next.js) is the only thing a browser talks to.
 - The **backend** (FastAPI) owns all business logic and exposes a REST API under `/api/v1`. Its OpenAPI spec is generated from the code and is the source of truth for the API.
-- **PostgreSQL** stores everything. Schema changes go through Alembic migrations.
+- The **evaluation worker** executes evaluation runs. The API only queues them in `evaluation_runs`; the worker claims them from there (see [Evaluation runs](#evaluation-runs)). It has no HTTP port, and more than one may run.
+- **PostgreSQL** stores everything, and is the worker's queue. Schema changes go through Alembic migrations.
 
 Inside the backend, each request flows `api/` (routing and validation) → `services/` (business logic, transactions) → `models/` (SQLAlchemy tables). `schemas/` holds the Pydantic request and response models.
 
@@ -234,6 +238,54 @@ Conventions:
 
 `make smoke` exercises this path against the real API (see the README).
 
+## Evaluation runs
+
+An evaluation run executes every test case of a dataset against one AgentVersion. Only the worker executes cases ([`app/evaluation/runner.py`](../backend/app/evaluation/runner.py), started by [`app/worker.py`](../backend/app/worker.py)); the API never does. The run and result statuses are defined in [Statuses](#statuses), and claiming, heartbeats and cancel are in [Evaluation run queue](#evaluation-run-queue).
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as API
+    participant D as Postgres
+    participant W as Worker
+    participant M as Model provider
+    C->>A: POST /api/v1/evaluation-runs
+    A->>D: insert run (pending)
+    A-->>C: 202 run
+    W->>D: claim oldest claimable run (running)
+    W->>D: fix the case set, set total_cases
+    loop each case without a result, up to EVAL_CONCURRENCY at once
+        W->>M: run_agent (no transaction open)
+        W->>D: trace and result, one transaction
+    end
+    W->>D: finish run (completed, failed or cancelled)
+    C->>A: GET /api/v1/evaluation-runs/{id}/results
+```
+
+1. `POST /api/v1/evaluation-runs` checks the version and dataset (`404`, `422`) and creates a `pending` run. It returns `202` at once.
+2. A worker claims the oldest claimable run and sets it `running`.
+3. The runner resolves the AgentVersion and builds its provider. If that fails (an unknown tool, an unsupported provider, invalid parameters, or no `ANTHROPIC_API_KEY` in the worker), the run ends `failed` with the reason in `error`, and no case runs.
+4. It fixes the case set: the dataset's cases that existed when the run started and have no result yet, in `key` order. It records `total_cases` on the first claim. Cases added to the dataset later never join the run.
+5. It runs up to `EVAL_CONCURRENCY` (default 4) cases at once. Each case, on its own session:
+   - snapshots the test case (`case_*` columns on the result),
+   - ends its read transaction, then calls `run_agent` with `evaluation_run_id` and `test_case_id`, which travel as root-span attributes onto the trace,
+   - stores the trace and its result in one transaction, so a crash never leaves a trace without its result.
+
+   The result's status follows the agent's outcome: `completed` if it answered, `failed` if its own run failed, and `error` for a provider failure (below). If our code raises, the transaction is rolled back and an `error` result is stored with no trace and the exception as `error`. One case's outcome never stops the others.
+6. When every case counted in `total_cases` has a result, the run ends `completed`. A `completed` run never has a missing result.
+
+**Provider failures** are not agent failures (spec decision 10). The adapter raises `ProviderAPIError` with a `kind` once its own retries are used up:
+
+- `kind == "account"` (authentication, permission or billing): the result is `error` with its trace, and the run is aborted. No new case starts, cases in flight finish and store their results, and the run ends `failed` with the provider's message.
+- `kind == "unavailable"` (rate limit, overload, server or connection errors): the result is `error` with its trace, and the run continues. Nothing retries the case at the run level.
+- A malformed response (`ProviderResponseError`), or a `ProviderAPIError` with no `kind` (the request itself was rejected), is the agent's failure: the result is `failed`.
+
+**Cancel is cooperative.** Cancelling a `pending` run ends it `cancelled` at once. A `running` run gets `cancel_requested`. The worker sees it at its next heartbeat, starts no new case, lets the cases in flight finish and store their results, then ends the run `cancelled`. Its results stay readable.
+
+**Heartbeat and reclaim.** While a run executes, a timer refreshes `heartbeat_at` every `EVAL_STALE_AFTER_SECONDS / 3` (default every 20 s), on a session no case uses, so a long case never makes a live run look stale. Each beat also checks for a cancel request, and stops the run's cases if the run is no longer `running`. If the worker dies or is stopped (SIGTERM or Ctrl-C: it stops claiming, lets in-flight cases finish and exits without finishing the run), the run stays `running`. Once its heartbeat is older than `EVAL_STALE_AFTER_SECONDS` (default 60), any worker reclaims it and resumes it: only the cases without a result run, `total_cases` is unchanged, and the `(evaluation_run_id, test_case_id)` unique constraint makes a second result for a case impossible.
+
+`make eval` exercises this path against the real API (see the README): it submits `weather-basics` against `weather-bot` v1 and runs the worker loop in process.
+
 ## Evaluation run queue
 
 `evaluation_runs` is the queue the worker reads ([`app/evaluation/queue.py`](../backend/app/evaluation/queue.py)). Every timestamp comparison uses the database's `now()`.
@@ -245,4 +297,4 @@ Conventions:
 
 ## Sample data
 
-`make seed` loads [`datasets/sample.json`](../datasets/sample.json) (one agent with one version, and the `weather-basics` dataset with three test cases) into the database named by `DATABASE_URL`. It is idempotent: rows that already exist are skipped, so running it again creates nothing.
+`make seed` loads [`datasets/sample.json`](../datasets/sample.json) (one agent with one version, and the `weather-basics` dataset with 26 test cases) into the database named by `DATABASE_URL`. It is idempotent: rows that already exist are skipped, so running it again creates nothing.
