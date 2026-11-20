@@ -19,6 +19,7 @@ from app.agents.providers.base import (
     ModelRequest,
     ModelResponse,
     ProviderAPIError,
+    ProviderFailureKind,
     ProviderResponseError,
     ToolCall,
     ToolResultsTurn,
@@ -166,6 +167,22 @@ def _is_transient(exc: anthropic.APIError) -> bool:
     return False
 
 
+ACCOUNT_STATUSES = frozenset({401, 402, 403})
+ACCOUNT_ERROR_TYPES = frozenset({"authentication_error", "permission_error", "billing_error"})
+
+
+def _kind(exc: anthropic.APIError) -> ProviderFailureKind | None:
+    """Classify a final API error (M2 D10). Call it only once retries are over."""
+    if isinstance(exc, anthropic.APIConnectionError):  # includes APITimeoutError
+        return "unavailable"
+    if isinstance(exc, anthropic.APIStatusError):
+        if exc.status_code in ACCOUNT_STATUSES or _error_type(exc) in ACCOUNT_ERROR_TYPES:
+            return "account"
+        if exc.status_code == 429 or _is_transient(exc):
+            return "unavailable"
+    return None
+
+
 def _describe(exc: anthropic.APIError) -> str:
     status = f" (status {exc.status_code})" if isinstance(exc, anthropic.APIStatusError) else ""
     return f"{_error_type(exc)}{status}: {exc.message}"
@@ -210,7 +227,8 @@ class AnthropicProvider:
                     span.set_attribute(ATTEMPTS_ATTRIBUTE, attempt)
                     raise ProviderAPIError(
                         f"anthropic API error after {attempt} attempt"
-                        f"{'s' if attempt > 1 else ''}: {_describe(exc)}"
+                        f"{'s' if attempt > 1 else ''}: {_describe(exc)}",
+                        kind=_kind(exc),
                     ) from exc
                 await self._sleep(0.5 * 2 ** (attempt - 1))
                 continue
