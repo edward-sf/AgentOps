@@ -273,8 +273,9 @@ async def test_account_failure_lets_in_flight_cases_finish(
 
     async def release_when_first_result_stored() -> None:
         # Cases 2 and 3 are in flight; let them answer only after case 1's error is stored,
-        # which is after the runner has seen the account failure.
-        while "case_001" not in await results_by_key(committed_session_factory, run_id):
+        # which is after the runner has seen the account failure. The commit happens in the
+        # runner, so polling the database is the only way to observe it from here.
+        while "case_001" not in await results_by_key(committed_session_factory, run_id):  # noqa: ASYNC110
             await asyncio.sleep(0.01)
         aborted.set()
 
@@ -691,9 +692,7 @@ async def test_run_finished_elsewhere_stops_and_keeps_its_outcome(
     assert (run.status, run.error) == ("failed", "finished by another worker")
     assert sorted(await results_by_key(committed_session_factory, run_id)) == ["case_001"]
     assert provider.inputs == [question(1)]
-    assert any(
-        r.name == "app.evaluation" and r.levelno == logging.WARNING for r in caplog.records
-    )
+    assert any(r.name == "app.evaluation" and r.levelno == logging.WARNING for r in caplog.records)
 
 
 async def test_finish_after_run_ended_elsewhere_is_a_warning(
@@ -714,9 +713,7 @@ async def test_finish_after_run_ended_elsewhere_is_a_warning(
 
     run = await load_run(committed_session_factory, run_id)
     assert run.status == "cancelled"
-    assert any(
-        r.name == "app.evaluation" and r.levelno == logging.WARNING for r in caplog.records
-    )
+    assert any(r.name == "app.evaluation" and r.levelno == logging.WARNING for r in caplog.records)
 
 
 async def test_heartbeat_lookup_error_stops_run(
@@ -758,6 +755,4 @@ async def test_heartbeat_lookup_error_stops_run(
     assert run.status == "running"
     assert sorted(await results_by_key(committed_session_factory, run_id)) == ["case_001"]
     assert provider.inputs == [question(1)]
-    assert any(
-        r.name == "app.evaluation" and r.levelno == logging.WARNING for r in caplog.records
-    )
+    assert any(r.name == "app.evaluation" and r.levelno == logging.WARNING for r in caplog.records)
