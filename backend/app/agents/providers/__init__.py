@@ -4,9 +4,13 @@ from app.agents.providers.anthropic import AnthropicProvider, make_anthropic_cli
 from app.agents.providers.base import Provider
 from app.config import Settings
 
+SUPPORTED_PROVIDERS = ("anthropic",)
+"""Provider names an AgentVersion may use. The API checks this at submit time without
+building a provider; `provider_for` checks it too."""
+
 
 class UnsupportedProviderError(ValueError):
-    """An AgentVersion names a provider that M1 can't run (only `anthropic`)."""
+    """An AgentVersion names a provider that can't be run (see `SUPPORTED_PROVIDERS`)."""
 
     def __init__(self, name: str) -> None:
         super().__init__(f"unsupported provider: {name}")
@@ -20,7 +24,7 @@ class ProviderNotConfiguredError(RuntimeError):
 def provider_for(name: str, settings: Settings) -> Provider:
     """The provider for `name`. Raises `UnsupportedProviderError` or
     `ProviderNotConfiguredError`."""
-    if name != "anthropic":
+    if name not in SUPPORTED_PROVIDERS:
         raise UnsupportedProviderError(name)
     api_key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
     if not api_key:

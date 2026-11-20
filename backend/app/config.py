@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     test_database_url: str = "postgresql+psycopg://agentops:agentops@localhost:5432/agentops_test"
     cors_origins: list[str] = ["http://localhost:3000"]
     anthropic_api_key: SecretStr | None = None
+    # Evaluation worker (M2 spec, decisions 5 and 6).
+    eval_concurrency: int = Field(default=4, ge=1)
+    """How many cases of one run a worker executes at once (`EVAL_CONCURRENCY`)."""
+    eval_stale_after_seconds: int = Field(default=60, ge=10)
+    """A `running` run whose heartbeat is older than this can be reclaimed
+    (`EVAL_STALE_AFTER_SECONDS`)."""
 
 
 @lru_cache

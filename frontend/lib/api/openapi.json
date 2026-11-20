@@ -323,6 +323,301 @@
         "title": "DatasetUpdate",
         "type": "object"
       },
+      "EvaluationResultRead": {
+        "properties": {
+          "case_expected_behavior": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Case Expected Behavior",
+            "type": "array"
+          },
+          "case_expected_output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Expected Output"
+          },
+          "case_input": {
+            "title": "Case Input",
+            "type": "string"
+          },
+          "case_key": {
+            "title": "Case Key",
+            "type": "string"
+          },
+          "case_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Case Tags",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "evaluation_run_id": {
+            "format": "uuid",
+            "title": "Evaluation Run Id",
+            "type": "string"
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          },
+          "passed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passed"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "scores": {
+            "additionalProperties": true,
+            "title": "Scores",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "failed",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "test_case_id": {
+            "format": "uuid",
+            "title": "Test Case Id",
+            "type": "string"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "id",
+          "evaluation_run_id",
+          "test_case_id",
+          "trace_id",
+          "status",
+          "error",
+          "output",
+          "case_key",
+          "case_input",
+          "case_expected_behavior",
+          "case_expected_output",
+          "case_tags",
+          "passed",
+          "score",
+          "scores",
+          "explanation",
+          "created_at"
+        ],
+        "title": "EvaluationResultRead",
+        "type": "object"
+      },
+      "EvaluationRunCreate": {
+        "properties": {
+          "agent_version_id": {
+            "format": "uuid",
+            "title": "Agent Version Id",
+            "type": "string"
+          },
+          "dataset_id": {
+            "format": "uuid",
+            "title": "Dataset Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_version_id",
+          "dataset_id"
+        ],
+        "title": "EvaluationRunCreate",
+        "type": "object"
+      },
+      "EvaluationRunRead": {
+        "properties": {
+          "agent_version_id": {
+            "format": "uuid",
+            "title": "Agent Version Id",
+            "type": "string"
+          },
+          "cancel_requested": {
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ResultCounts"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset_id": {
+            "format": "uuid",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total_cases": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Cases"
+          }
+        },
+        "required": [
+          "id",
+          "agent_version_id",
+          "dataset_id",
+          "status",
+          "error",
+          "total_cases",
+          "cancel_requested",
+          "started_at",
+          "completed_at",
+          "heartbeat_at",
+          "created_at",
+          "counts"
+        ],
+        "title": "EvaluationRunRead",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -429,6 +724,68 @@
         "title": "Page[DatasetRead]",
         "type": "object"
       },
+      "Page_EvaluationResultRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationResultRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[EvaluationResultRead]",
+        "type": "object"
+      },
+      "Page_EvaluationRunRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationRunRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[EvaluationRunRead]",
+        "type": "object"
+      },
       "Page_TestCaseRead_": {
         "properties": {
           "items": {
@@ -489,6 +846,28 @@
           "offset"
         ],
         "title": "Page[TraceRead]",
+        "type": "object"
+      },
+      "ResultCounts": {
+        "description": "How many results the run has, by status. Every status is present, zero included.",
+        "properties": {
+          "completed": {
+            "default": 0,
+            "title": "Completed",
+            "type": "integer"
+          },
+          "error": {
+            "default": 0,
+            "title": "Error",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          }
+        },
+        "title": "ResultCounts",
         "type": "object"
       },
       "RunCreate": {
@@ -2065,6 +2444,335 @@
         "summary": "Bulk Create Test Cases",
         "tags": [
           "datasets"
+        ]
+      }
+    },
+    "/api/v1/evaluation-runs": {
+      "get": {
+        "description": "Newest first.",
+        "operationId": "list_evaluation_runs_api_v1_evaluation_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent_version_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Version Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dataset_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dataset Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "running",
+                    "completed",
+                    "failed",
+                    "cancelled"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_EvaluationRunRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Evaluation Runs",
+        "tags": [
+          "evaluation-runs"
+        ]
+      },
+      "post": {
+        "description": "Queue a `pending` run for a worker. Nothing executes in the request (D1).",
+        "operationId": "create_evaluation_run_api_v1_evaluation_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationRunCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Evaluation Run",
+        "tags": [
+          "evaluation-runs"
+        ]
+      }
+    },
+    "/api/v1/evaluation-runs/{run_id}": {
+      "get": {
+        "operationId": "get_evaluation_run_api_v1_evaluation_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Evaluation Run",
+        "tags": [
+          "evaluation-runs"
+        ]
+      }
+    },
+    "/api/v1/evaluation-runs/{run_id}/cancel": {
+      "post": {
+        "description": "A `pending` run becomes `cancelled`; a `running` one gets `cancel_requested` and the\nworker stops it (D7). 409 if the run has already finished.",
+        "operationId": "cancel_evaluation_run_api_v1_evaluation_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Evaluation Run",
+        "tags": [
+          "evaluation-runs"
+        ]
+      }
+    },
+    "/api/v1/evaluation-runs/{run_id}/results": {
+      "get": {
+        "description": "Ordered by `case_key`.",
+        "operationId": "list_evaluation_results_api_v1_evaluation_runs__run_id__results_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "completed",
+                    "failed",
+                    "error"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_EvaluationResultRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Evaluation Results",
+        "tags": [
+          "evaluation-runs"
         ]
       }
     },
