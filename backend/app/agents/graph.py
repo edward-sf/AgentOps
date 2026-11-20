@@ -21,6 +21,7 @@ from app.agents.providers.base import (
     ModelResponse,
     Provider,
     ProviderError,
+    ProviderFailureKind,
     ToolResult,
     ToolResultsTurn,
     Turn,
@@ -37,6 +38,8 @@ class AgentState(TypedDict):
     model_calls: int
     final_text: str | None
     failure: str | None
+    provider_failure: ProviderFailureKind | None
+    """Set with `failure` when a `ProviderAPIError` with a `kind` ended the run (M2 D10)."""
 
 
 def initial_state(user_input: str) -> AgentState:
@@ -45,6 +48,7 @@ def initial_state(user_input: str) -> AgentState:
         "model_calls": 0,
         "final_text": None,
         "failure": None,
+        "provider_failure": None,
     }
 
 
@@ -126,7 +130,11 @@ def build_graph(
             except ProviderError as exc:
                 error = f"provider error: {exc}"
                 _fail(span, error)
-                return {"model_calls": calls, "failure": error}
+                return {
+                    "model_calls": calls,
+                    "failure": error,
+                    "provider_failure": getattr(exc, "kind", None),
+                }
             span.set_attributes(
                 {
                     attr.GEN_AI_RESPONSE_MODEL: response.response_model,
