@@ -8,8 +8,9 @@ class Settings(BaseSettings):
     """App settings from the environment and `.env`.
 
     `anthropic_api_key` is a `SecretStr`, so it never shows in a repr, `str` or JSON dump. Read
-    it with `.get_secret_value()` only where a client is built (`provider_for`, `record.py`,
-    `smoke.py`). An empty value counts as not set.
+    it with `.get_secret_value()` only where a client is built or the key's presence is checked
+    (`provider_for`, `record.py`, `smoke.py`, `eval.py`, `worker.py`). An empty value counts as
+    not set.
 
     `database_url` and `test_database_url` stay `str`: they're passed to SQLAlchemy and Alembic
     in many places, and SQLAlchemy already masks the password in `URL` repr.
