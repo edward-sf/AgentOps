@@ -171,7 +171,18 @@ async def _record_result(db_session: AsyncSession, dataset_id: str, case_id: str
     run = EvaluationRun(agent_version_id=version.id, dataset_id=dataset_id)
     db_session.add(run)
     await db_session.flush()
-    db_session.add(EvaluationResult(evaluation_run_id=run.id, test_case_id=case_id, passed=True))
+    db_session.add(
+        EvaluationResult(
+            evaluation_run_id=run.id,
+            test_case_id=case_id,
+            status="error",
+            error="boom",
+            case_key="k",
+            case_input="q",
+            case_expected_behavior=[],
+            case_tags=[],
+        )
+    )
     await db_session.flush()
 
 
