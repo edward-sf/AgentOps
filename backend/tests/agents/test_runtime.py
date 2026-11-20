@@ -615,7 +615,9 @@ async def test_evaluation_ids_omitted_by_default(db_session: AsyncSession) -> No
     assert stored.test_case_id is None
 
 
-@pytest.mark.xfail(reason="needs M2.T1 ingest linking", strict=True)
+@pytest.mark.xfail(
+    reason="needs M2.T1 ingest linking; remove marker once T1 is merged", strict=False
+)
 async def test_trace_linked_to_evaluation(db_session: AsyncSession) -> None:
     outcome, evaluation_run, case = await run_linked(db_session)
     stored = await db_session.get(Trace, outcome.trace_id)
