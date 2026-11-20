@@ -27,21 +27,29 @@ def test_database_urls_stay_plain_strings() -> None:
 def test_eval_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("EVAL_CONCURRENCY", raising=False)
     monkeypatch.delenv("EVAL_STALE_AFTER_SECONDS", raising=False)
+    monkeypatch.delenv("EVAL_POLL_INTERVAL_SECONDS", raising=False)
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.eval_concurrency == 4
     assert settings.eval_stale_after_seconds == 60
+    assert settings.eval_poll_interval_seconds == 1.0
 
 
 def test_eval_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("EVAL_CONCURRENCY", "2")
     monkeypatch.setenv("EVAL_STALE_AFTER_SECONDS", "30")
+    monkeypatch.setenv("EVAL_POLL_INTERVAL_SECONDS", "0.5")
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.eval_concurrency == 2
     assert settings.eval_stale_after_seconds == 30
+    assert settings.eval_poll_interval_seconds == 0.5
 
 
 @pytest.mark.parametrize(
-    ("name", "value"), [("EVAL_CONCURRENCY", "0"), ("EVAL_STALE_AFTER_SECONDS", "9")]
+    ("name", "value"), [
+        ("EVAL_CONCURRENCY", "0"),
+        ("EVAL_STALE_AFTER_SECONDS", "9"),
+        ("EVAL_POLL_INTERVAL_SECONDS", "0"),
+    ]
 )
 def test_eval_settings_bounds(monkeypatch: pytest.MonkeyPatch, name: str, value: str) -> None:
     monkeypatch.setenv(name, value)

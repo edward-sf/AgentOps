@@ -89,6 +89,7 @@ async def execute_run(
     provider_factory: ProviderFactory,
     concurrency: int,
     stale_after: timedelta,
+    shutdown: asyncio.Event | None = None,
 ) -> None:
     """Execute a run that this worker has just claimed, and finish it.
 
@@ -96,6 +97,10 @@ async def execute_run(
     configuration error or an account-level provider failure, and `cancelled` on a cancel
     request. If the run is no longer `running` (another worker reclaimed and finished it)
     or has gone, this logs a warning and returns without finishing it.
+
+    Setting `shutdown` (the worker is stopping) starts no new case, lets the cases in flight
+    finish and store their results, and returns without finishing the run: it stays
+    `running` and is reclaimed and resumed after the stale timeout (6.2 step 7).
 
     Never raises for a case or a provider failure. Raises only if the run row can't be read
     or finished, or a result can't be stored (a bug or a lost database).
@@ -129,14 +134,16 @@ async def execute_run(
         await control.commit()
 
         state = _RunState(stop=asyncio.Event())
-        # One beat before any case starts: a cancel requested before the claim, or a run
-        # that's already gone, starts nothing.
-        await _beat(control, run_id, state)
+        watching = asyncio.create_task(_watch_shutdown(shutdown, state))
         stop_beating = asyncio.Event()
-        beating = asyncio.create_task(
-            _heartbeat_loop(control, run_id, state, stale_after / 3, stop_beating)
-        )
+        beating: asyncio.Task[None] | None = None
         try:
+            # One beat before any case starts: a cancel requested before the claim, a run
+            # that's already gone, or a worker already shutting down, starts nothing.
+            await _beat(control, run_id, state)
+            beating = asyncio.create_task(
+                _heartbeat_loop(control, run_id, state, stale_after / 3, stop_beating)
+            )
             if not state.stop.is_set() and pending:
                 context = _Context(run_id, session_factory, provider, config, state)
                 cases = iter(pending)
@@ -144,10 +151,12 @@ async def execute_run(
                     for _ in range(min(concurrency, len(pending))):
                         group.create_task(_take_cases(context, cases))
         finally:
+            watching.cancel()
             # Let the loop leave between beats, so the control session is never cancelled
             # mid-transaction.
             stop_beating.set()
-            await beating
+            if beating is not None:
+                await beating
 
         if state.lost is not None:
             logger.warning(
@@ -305,6 +314,14 @@ def _is_duplicate(exc: BaseException) -> bool:
         return False
     diag = getattr(exc.orig, "diag", None)
     return getattr(diag, "constraint_name", None) == DUPLICATE_RESULT
+
+
+async def _watch_shutdown(shutdown: asyncio.Event | None, state: _RunState) -> None:
+    """Stop the run's cases, without finishing the run, once the worker is shutting down."""
+    if shutdown is None:
+        return
+    await shutdown.wait()
+    state.lose("the worker is shutting down")
 
 
 async def _heartbeat_loop(
