@@ -45,11 +45,12 @@ def test_eval_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "value"), [
+    ("name", "value"),
+    [
         ("EVAL_CONCURRENCY", "0"),
         ("EVAL_STALE_AFTER_SECONDS", "9"),
         ("EVAL_POLL_INTERVAL_SECONDS", "0"),
-    ]
+    ],
 )
 def test_eval_settings_bounds(monkeypatch: pytest.MonkeyPatch, name: str, value: str) -> None:
     monkeypatch.setenv(name, value)
