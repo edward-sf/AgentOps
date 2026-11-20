@@ -75,12 +75,15 @@ An issue PR is squash-merged into `milestone/m<N>` only with both records on its
 - Any checkpoint on the issue is approved.
 - The PR base is a `milestone/*` branch.
 
+Checks from other workflows are not part of the merge rule. A failing or cancelled one still blocks `issue-merge`, but a pending one does not, and `issue-merge` doesn't wait for it. This is intended: the rule is about `ci`, and a check outside our control that never finishes shouldn't hold up a merge. `pr-gate` already watches every check on head, so in practice they have finished by the time the Orchestrator merges.
+
 ### Rules
 
 - **SHA invalidation.** Any new push invalidates the gate and the verdict. Re-run `pr-gate`, then get a new review.
 - **FAIL loop.** A FAIL blocks the merge. The fix is pushed (the Implementer is resumed with the findings), the PR passes the gate again, and a scoped re-review of the fix diff returns a new verdict, which the Orchestrator posts.
 - **Minor findings** that a Reviewer defers are not fixed in the PR. They get backlog issues at milestone review (see "New work gets an issue" under Rules).
 - **Checkpoints.** A task marked `**Checkpoint**` in the plan needs the author's sign-off before any task that depends on it starts. Approval is the `checkpoint-approved` label on the checkpoint *issue*, applied **only by the author**. Agents never apply it. A GitHub review approval is impossible, because every PR is opened under the author's GitHub account and GitHub does not let authors approve their own PRs. At a checkpoint the Orchestrator posts the verdict plus a short "checkpoint review guide" comment listing the open decisions, notifies the author, and carries on with independent tasks.
+- **Dependencies across milestones.** `issue-start` reads a dependency's plan (for its checkpoint flag) from `origin/milestone/m<N>` while that branch exists, and from `origin/main` once the milestone has merged and its branch is deleted.
 - **Board statuses** follow `Future → Ready → In progress → In review → Merged to milestone → Done`. `./flow` moves issues through them.
 
 ### Plan task format

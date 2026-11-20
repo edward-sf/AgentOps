@@ -93,6 +93,7 @@ class FakeGh:
     def __init__(self, existing: list[dict[str, Any]]) -> None:
         self.existing = existing
         self.calls: list[list[str]] = []
+        self.inputs: dict[str, str | None] = {}
         self.statuses: dict[int, str] = {int(i["number"]): "Ready" for i in existing}
         self.open_prs: list[dict[str, Any]] = [{"number": 10, "body": ""}]
         self.merged: list[dict[str, Any]] = []
@@ -104,6 +105,7 @@ class FakeGh:
         self, args: list[str], *, input: str | None = None, allow: tuple[int, ...] = (0,)
     ) -> str:
         self.calls.append(args)
+        self.inputs[" ".join(args[:3])] = input
         if args[:2] == ["issue", "create"]:
             return "https://github.com/edward-sf/AgentOps/issues/77\n"
         return ""
@@ -186,6 +188,30 @@ def test_milestone_start_is_idempotent(wire: Callable[[list[dict[str, Any]]], Fa
     assert out[:2] == ["unchanged M9.T1", "unchanged M9.T2"]
     assert f.writes() == []
     assert not any(c[0] == "board" for c in f.calls)
+
+
+def test_restart_preserves_ticked_boxes(wire: Callable[[list[dict[str, Any]]], FakeGh]) -> None:
+    existing = existing_issues(tasks())
+    existing[0]["body"] = existing[0]["body"].replace("- [ ] Criterion one", "- [x] Criterion one")
+    existing[1]["body"] = existing[1]["body"].replace(
+        "- [ ] Only criterion", "- [X] Only criterion"
+    )
+    existing[1]["body"] = existing[1]["body"].replace("Do the second thing.", "Old goal.")
+    f = wire(existing)
+    out = run_start(f)
+    assert out[:2] == ["unchanged M9.T1", "update M9.T2"]  # a tick alone is not drift
+    assert [c[:3] for c in f.writes()] == [["issue", "edit", "22"]]
+    body = f.inputs["issue edit 22"] or ""
+    assert "- [X] Only criterion" in body and "Do the second thing." in body
+
+
+def test_ticks_kept_only_where_the_criterion_text_matches() -> None:
+    new = "### Acceptance criteria\n- [ ] Criterion one\n- [ ] Reworded two\n  - [ ] nested\n"
+    old = "### Acceptance criteria\n- [x] Criterion one  \n- [x] Criterion two\n  - [x] nested\n"
+    assert milestone.keep_ticks(new, old) == (
+        "### Acceptance criteria\n- [x] Criterion one\n- [ ] Reworded two\n  - [x] nested\n"
+    )
+    assert milestone.keep_ticks(new, "") == new
 
 
 def test_milestone_start_creates_updates_and_never_resets_status(

@@ -118,6 +118,29 @@ def replace_section(body: str, heading: str, content: str) -> str:
     return "".join(lines[:start]) + f"{want}\n" + content.strip("\n") + "\n" + tail + rest
 
 
+_BOX = re.compile(r"^(\s*[-*] )\[([ xX])\] (.*?)\s*$")
+
+
+def keep_ticks(body: str, old: str) -> str:
+    """`body` with each `- [ ]` ticked where `old` has a ticked box with the same text.
+
+    Re-rendering an issue from the plan would otherwise untick boxes someone ticked on GitHub.
+    A criterion whose text changed in the plan comes back unticked.
+    """
+    ticked: dict[str, str] = {}
+    for line in old.replace("\r\n", "\n").split("\n"):
+        m = _BOX.match(line)
+        if m and m.group(2) != " ":
+            ticked.setdefault(m.group(3), m.group(2))
+    out: list[str] = []
+    for line in body.split("\n"):
+        m = _BOX.match(line)
+        if m and m.group(2) == " " and m.group(3) in ticked:
+            line = line[: m.start(2)] + ticked[m.group(3)] + line[m.end(2) :]
+        out.append(line)
+    return "\n".join(out)
+
+
 def render_rollup(prs: list[tuple[int, str]], issues: list[int]) -> tuple[str, str]:
     prs_text = "\n".join(f"- #{n} — {title}" for n, title in prs)
     closes_text = "\n".join(f"Closes #{n}" for n in issues)
@@ -247,6 +270,7 @@ def milestone_start(
             lines.append(f"board {task.id}")  # off the board or no status: fill, never overwrite
             if not dry_run:
                 board.set_status(int(issue["number"]), READY)
+        body = keep_ticks(body, str(issue["body"] or ""))
         has_label = CHECKPOINT_LABEL in _labels(issue)
         drift = (
             issue["title"] != title
