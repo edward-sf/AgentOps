@@ -124,7 +124,8 @@ async def run(
 ) -> int:
     """Build the app against `DATABASE_URL` and run the check. Returns the exit code."""
     settings = settings or get_settings()
-    if provider_factory is None and not settings.anthropic_api_key:
+    key = settings.anthropic_api_key
+    if provider_factory is None and not (key and key.get_secret_value()):
         print("ANTHROPIC_API_KEY is not set", file=sys.stderr)
         return 2
     app = create_app(settings)

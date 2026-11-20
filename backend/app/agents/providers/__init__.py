@@ -22,6 +22,7 @@ def provider_for(name: str, settings: Settings) -> Provider:
     `ProviderNotConfiguredError`."""
     if name != "anthropic":
         raise UnsupportedProviderError(name)
-    if not settings.anthropic_api_key:
+    api_key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
+    if not api_key:
         raise ProviderNotConfiguredError("ANTHROPIC_API_KEY is not set")
-    return AnthropicProvider(make_anthropic_client(settings.anthropic_api_key))
+    return AnthropicProvider(make_anthropic_client(api_key))

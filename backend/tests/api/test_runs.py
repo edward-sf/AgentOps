@@ -8,6 +8,7 @@ import pytest
 from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -184,7 +185,7 @@ async def test_unknown_tool_422(
 async def test_openai_provider_422(settings: Settings, db_session: AsyncSession) -> None:
     """The real factory: an `openai` version is refused even when a key is set."""
     version = await make_agent_version(db_session, provider="openai")
-    keyed = settings.model_copy(update={"anthropic_api_key": "sk-test-not-used"})
+    keyed = settings.model_copy(update={"anthropic_api_key": SecretStr("sk-test-not-used")})
     async with real_factory_client(keyed, db_session) as client:
         await assert_rejected(
             client,
