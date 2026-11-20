@@ -756,3 +756,65 @@ async def test_heartbeat_lookup_error_stops_run(
     assert sorted(await results_by_key(committed_session_factory, run_id)) == ["case_001"]
     assert provider.inputs == [question(1)]
     assert any(r.name == "app.evaluation" and r.levelno == logging.WARNING for r in caplog.records)
+
+
+# --- worker shutdown ------------------------------------------------------------------------
+
+
+async def test_shutdown_lets_in_flight_cases_finish_without_finishing_run(
+    committed_session_factory: Factory,
+) -> None:
+    """`shutdown` set mid-run: no new case starts, in-flight cases store their results, and
+    the run stays `running` so another worker reclaims and resumes it (6.2 step 7)."""
+    run_id, _ = await setup_run(committed_session_factory, cases=5)
+    shutdown = asyncio.Event()
+
+    async def shut_down_then_answer() -> ModelResponse:
+        shutdown.set()
+        await asyncio.sleep(0)  # the runner sees the shutdown while this case is in flight
+        return end_turn("in flight")
+
+    provider = ByInput({question(2): [shut_down_then_answer]})
+
+    await asyncio.wait_for(
+        execute_run(
+            run_id,
+            session_factory=committed_session_factory,
+            provider_factory=lambda name: provider,
+            concurrency=1,
+            stale_after=STALE,
+            shutdown=shutdown,
+        ),
+        timeout=WAIT,
+    )
+
+    run = await load_run(committed_session_factory, run_id)
+    assert run.status == "running"
+    assert run.completed_at is None
+    results = await results_by_key(committed_session_factory, run_id)
+    assert sorted(results) == ["case_001", "case_002"]
+    assert results["case_002"].output == "in flight"
+
+
+async def test_shutdown_before_first_case_starts_nothing(
+    committed_session_factory: Factory,
+) -> None:
+    run_id, _ = await setup_run(committed_session_factory)
+    shutdown = asyncio.Event()
+    shutdown.set()
+    provider = ByInput()
+
+    await asyncio.wait_for(
+        execute_run(
+            run_id,
+            session_factory=committed_session_factory,
+            provider_factory=lambda name: provider,
+            concurrency=2,
+            stale_after=STALE,
+            shutdown=shutdown,
+        ),
+        timeout=WAIT,
+    )
+
+    assert (await load_run(committed_session_factory, run_id)).status == "running"
+    assert provider.inputs == []

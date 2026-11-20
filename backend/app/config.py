@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     eval_stale_after_seconds: int = Field(default=60, ge=10)
     """A `running` run whose heartbeat is older than this can be reclaimed
     (`EVAL_STALE_AFTER_SECONDS`)."""
+    eval_poll_interval_seconds: float = Field(default=1.0, gt=0)
+    """How long an idle worker waits before it polls the queue again
+    (`EVAL_POLL_INTERVAL_SECONDS`)."""
 
 
 @lru_cache

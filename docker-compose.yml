@@ -37,6 +37,20 @@ services:
       retries: 20
       start_period: 10s
 
+  # The evaluation worker. The image's entrypoint runs a given command without migrating,
+  # so it waits for the api, which migrates on start, to be healthy.
+  worker:
+    profiles: ["full"]
+    build: ./backend
+    command: ["python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://agentops:agentops@db:5432/agentops
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    stop_grace_period: 2m
+
   web:
     profiles: ["full"]
     build:
