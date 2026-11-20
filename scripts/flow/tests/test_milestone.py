@@ -193,7 +193,9 @@ def test_milestone_start_is_idempotent(wire: Callable[[list[dict[str, Any]]], Fa
 def test_restart_preserves_ticked_boxes(wire: Callable[[list[dict[str, Any]]], FakeGh]) -> None:
     existing = existing_issues(tasks())
     existing[0]["body"] = existing[0]["body"].replace("- [ ] Criterion one", "- [x] Criterion one")
-    existing[1]["body"] = existing[1]["body"].replace("- [ ] Only criterion", "- [X] Only criterion")
+    existing[1]["body"] = existing[1]["body"].replace(
+        "- [ ] Only criterion", "- [X] Only criterion"
+    )
     existing[1]["body"] = existing[1]["body"].replace("Do the second thing.", "Old goal.")
     f = wire(existing)
     out = run_start(f)
