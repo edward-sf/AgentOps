@@ -6,11 +6,13 @@ runs it. It drives the app in process against `DATABASE_URL`: it submits the run
 `POST /api/v1/evaluation-runs`, executes it with the worker's `run_once` until the run
 finishes, and prints one line per result, then the counts.
 
-`run_once` claims the oldest claimable run, so runs queued earlier on the same database
-execute first (and are said so). If another worker claims this run, `make eval` waits for it.
+It never executes a run it didn't create: `run_once` claims the oldest claimable run, so if
+any other run is `pending` or `running` (with a fresh or a stale heartbeat), it lists them on
+stderr and exits 1 without submitting. If another worker claims this run, `make eval` waits for
+it.
 
-Exit codes: 0 the run `completed` with no `error` result, 1 otherwise, 2 no key (checked
-before anything is submitted).
+Exit codes: 0 the run `completed` with no `error` result, 1 otherwise (other runs queued
+included), 2 no key (checked before anything is submitted).
 """
 
 import asyncio
@@ -41,6 +43,10 @@ from app.worker import run_once
 DATASET_NAME = "weather-basics"
 TEXT_WIDTH = 80
 FINISHED = {"completed", "failed", "cancelled"}
+UNFINISHED = ("pending", "running")
+QUEUED_HINT = (
+    "hint: cancel them with POST /api/v1/evaluation-runs/{id}/cancel, or stop the other worker"
+)
 
 
 def result_line(result: dict[str, Any]) -> str:
@@ -59,6 +65,27 @@ def counts_line(run: dict[str, Any]) -> str:
         f"(completed={counts['completed']} failed={counts['failed']} error={counts['error']})"
     )
     return line + (f": {run['error']}" if run["error"] else "")
+
+
+async def _unfinished_runs(client: AsyncClient) -> list[dict[str, Any]]:
+    """Every `pending` or `running` run, whatever its heartbeat: `run_once` could claim any
+    of them, and a fresh `running` one belongs to another worker."""
+    runs: list[dict[str, Any]] = []
+    for status in UNFINISHED:
+        offset = 0
+        while True:
+            page = ok(
+                await client.get(
+                    "/api/v1/evaluation-runs",
+                    params={"status": status, "limit": 200, "offset": offset},
+                ),
+                f"list {status} runs",
+            )
+            runs.extend(page["items"])
+            offset += len(page["items"])
+            if not page["items"] or offset >= page["total"]:
+                break
+    return runs
 
 
 async def _submit(client: AsyncClient) -> dict[str, Any]:
@@ -96,6 +123,17 @@ async def _drive(
     settings: Settings,
     out: TextIO,
 ) -> int:
+    others = await _unfinished_runs(client)
+    if others:
+        print(
+            f"eval: {len(others)} other evaluation run(s) not finished; not submitting, so "
+            "that only this run is executed:",
+            file=sys.stderr,
+        )
+        for other in others:
+            print(f"  {other['id']} {other['status']} {other['created_at']}", file=sys.stderr)
+        print(QUEUED_HINT, file=sys.stderr)
+        return 1
     run = await _submit(client)
     run_id = run["id"]
     print(f"run {run_id} queued: {AGENT_NAME} v{VERSION} on {DATASET_NAME}", file=out)
@@ -107,7 +145,8 @@ async def _drive(
             # Another worker holds the run, or it is waiting to be reclaimed.
             await asyncio.sleep(settings.eval_poll_interval_seconds)
         elif str(claimed) != run_id:
-            print(f"eval: executed run {claimed}, queued earlier", file=sys.stderr)
+            # Only if a run was submitted after the check above.
+            print(f"eval: also executed run {claimed}, submitted meanwhile", file=sys.stderr)
         run = ok(await client.get(f"/api/v1/evaluation-runs/{run_id}"), "get run")
 
     for result in await _results(client, run_id):

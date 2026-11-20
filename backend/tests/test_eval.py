@@ -17,6 +17,7 @@ from app.eval import evaluate
 from app.models import EvaluationRun
 from app.seed import seed
 from tests.evaluation.test_runner import ByInput
+from tests.factories import make_evaluation_run
 
 SAMPLE = Path(__file__).resolve().parents[2] / "datasets" / "sample.json"
 CASES = 26
@@ -97,3 +98,29 @@ async def test_eval_no_key_exits_2(
     assert code == 2
     assert "ANTHROPIC_API_KEY is not set" in capsys.readouterr().err
     assert await run_count(committed_session_factory) == 0
+
+
+async def test_eval_refuses_when_other_runs_queued(
+    settings: Settings, committed_session_factory: Any, capsys: Any
+) -> None:
+    await seeded(committed_session_factory)
+    async with committed_session_factory() as session:
+        other = await make_evaluation_run(session)
+        await session.commit()
+        other_id = other.id
+    provider = ByInput()
+    out = io.StringIO()
+
+    code = await evaluate(eval_settings(settings), out, provider_factory=lambda name: provider)
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert f"{other_id} pending " in err
+    assert "/api/v1/evaluation-runs/{id}/cancel" in err
+    assert provider.inputs == []
+    assert await run_count(committed_session_factory) == 1
+    async with committed_session_factory() as session:
+        untouched = await session.get(EvaluationRun, other_id)
+        assert untouched is not None
+        assert untouched.status == "pending"
+        assert untouched.heartbeat_at is None
