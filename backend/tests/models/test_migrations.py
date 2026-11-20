@@ -1,6 +1,6 @@
+import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-import pytest
 from sqlalchemy import Connection, create_engine, inspect, text
 
 from alembic import command
