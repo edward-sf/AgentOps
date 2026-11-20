@@ -1,0 +1,53 @@
+{
+  "scenario": "thinking_tool_use",
+  "source": "synthetic",
+  "sdk_version": "2.11.0",
+  "model": "claude-sonnet-5-5",
+  "recorded_at": "2026-11-19T00:00:00Z",
+  "status_code": 200,
+  "body": {
+    "model": "claude-sonnet-5-5",
+    "id": "msg_01SyntheticThinkingToolUse",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "",
+        "signature": "EsYBCkYIBxgCKkBSyntheticSignatureNotFromTheApiReplaceWithMakeRecordxyz0123456789abcdefABCDEF=="
+      },
+      {
+        "type": "tool_use",
+        "id": "toolu_01SyntheticThinkingCall",
+        "name": "get_weather",
+        "input": {
+          "location": "Seattle"
+        },
+        "caller": {
+          "type": "direct"
+        }
+      }
+    ],
+    "container": null,
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+      "input_tokens": 436,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 112,
+      "output_tokens_details": {
+        "thinking_tokens": 61
+      },
+      "service_tier": "standard",
+      "inference_geo": "global",
+      "speed": "standard"
+    },
+    "diagnostics": null
+  }
+}

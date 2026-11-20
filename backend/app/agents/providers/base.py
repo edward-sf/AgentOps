@@ -33,10 +33,20 @@ class UserTurn:
     text: str
 
 
+RawContent = tuple[dict[str, Any], ...]
+"""Assistant content blocks exactly as the API returned them, in order (M2.T11)."""
+
+THINKING_BLOCK_TYPES = frozenset({"thinking", "redacted_thinking"})
+
+
 @dataclass(frozen=True)
 class AssistantTurn:
     text: str | None
     tool_calls: tuple[ToolCall, ...]
+    raw_content: RawContent = ()
+    """When set, the adapter sends these blocks back unchanged instead of rebuilding them from
+    `text` and `tool_calls`. Thinking blocks must be replayed as received, signature included,
+    in their original position, so never edit or reorder them."""
 
 
 @dataclass(frozen=True)
@@ -66,6 +76,13 @@ class ModelResponse:
     response_model: str
     input_tokens: int
     output_tokens: int
+    raw_content: RawContent = ()
+    """Every content block, thinking included, as returned (see `AssistantTurn.raw_content`)."""
+
+    @property
+    def thinking_blocks(self) -> int:
+        """How many `thinking` and `redacted_thinking` blocks the response had."""
+        return sum(1 for block in self.raw_content if block.get("type") in THINKING_BLOCK_TYPES)
 
 
 class Provider(Protocol):

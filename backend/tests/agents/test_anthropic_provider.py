@@ -3,7 +3,15 @@ from typing import Any
 
 import httpx2
 import pytest
+from anthropic.types import (
+    ContentBlockParam,
+    RedactedThinkingBlockParam,
+    TextBlockParam,
+    ThinkingBlockParam,
+    ToolUseBlockParam,
+)
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
+from pydantic import TypeAdapter
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
@@ -132,6 +140,133 @@ def message_body(**overrides: Any) -> dict[str, Any]:
     body: dict[str, Any] = dict(load_fixture("final_answer")["body"])
     body.update(overrides)
     return body
+
+
+# --- thinking blocks (M2.T11) ---------------------------------------------------------------
+
+CONTENT_BLOCK_PARAM: TypeAdapter[Any] = TypeAdapter(ContentBlockParam)
+PARAM_KEYS = {
+    "text": set(TextBlockParam.__annotations__),
+    "thinking": set(ThinkingBlockParam.__annotations__),
+    "redacted_thinking": set(RedactedThinkingBlockParam.__annotations__),
+    "tool_use": set(ToolUseBlockParam.__annotations__),
+}
+REDACTED = {"type": "redacted_thinking", "data": "EmwKAhgBEgy3va3pzix/LafPsn4aDFIT2Xlxh0L5L8rLVyIw"}
+THINKING = {"type": "thinking", "thinking": "", "signature": "EqQBCgIYAhIM1gbcDa9GJwZA2b3hGgxBdjrkzLoky3dl1pk"}
+
+
+def assert_valid_block_params(blocks: tuple[dict[str, Any], ...]) -> None:
+    """Every block is a content-block param the SDK accepts, with no field it doesn't know."""
+    for block in blocks:
+        CONTENT_BLOCK_PARAM.validate_python(block)
+        assert set(block) <= PARAM_KEYS[block["type"]], block
+
+
+async def test_thinking_then_tool_use_parsed(tracer_provider: TracerProvider) -> None:
+    body = load_fixture("thinking_tool_use")["body"]
+    provider = AnthropicProvider(replay_client("thinking_tool_use"))
+
+    response = await complete_in_span(provider, seattle_request(), tracer_provider)
+
+    assert response.stop_reason == "tool_use"
+    (call,) = response.tool_calls
+    tool_block = body["content"][1]
+    assert call == ToolCall(id=tool_block["id"], name="get_weather", arguments=tool_block["input"])
+    assert response.text is None
+    assert response.raw_content == tuple(body["content"])
+    assert response.thinking_blocks == 1
+    assert_valid_block_params(response.raw_content)
+
+
+async def test_redacted_thinking_parsed(tracer_provider: TracerProvider) -> None:
+    text = {"type": "text", "text": "Seattle is rainy."}
+    body = message_body(content=[REDACTED, text])
+    provider = AnthropicProvider(replay_responses((200, body)))
+
+    response = await complete_in_span(provider, seattle_request(), tracer_provider)
+
+    assert response.text == "Seattle is rainy."
+    assert response.raw_content == (REDACTED, text)
+    assert response.thinking_blocks == 1
+    assert_valid_block_params(response.raw_content)
+
+
+async def test_thinking_text_never_becomes_response_text(tracer_provider: TracerProvider) -> None:
+    # A summarised (not omitted) block, sitting between text and a tool call.
+    shown = {**THINKING, "thinking": "I should look this up."}
+    tool = {"type": "tool_use", "id": "toolu_9", "name": "get_weather", "input": {"location": "X"}}
+    before = {"type": "text", "text": "Checking."}
+    body = message_body(content=[before, shown, tool], stop_reason="tool_use")
+    provider = AnthropicProvider(replay_responses((200, body)))
+
+    response = await complete_in_span(provider, seattle_request(), tracer_provider)
+
+    assert response.text == "Checking."
+    assert response.raw_content == (before, shown, tool)
+    assert response.thinking_blocks == 1
+
+
+@pytest.mark.parametrize(
+    ("block", "match"),
+    [
+        ({"type": "thinking", "thinking": ""}, "signature"),
+        ({"type": "thinking", "signature": "sig"}, "thinking"),
+        ({"type": "redacted_thinking"}, "data"),
+    ],
+)
+async def test_ill_typed_thinking_block_raises(
+    block: dict[str, Any], match: str, tracer_provider: TracerProvider
+) -> None:
+    provider = AnthropicProvider(replay_responses((200, message_body(content=[block]))))
+    with pytest.raises(ProviderResponseError, match=match):
+        await complete_in_span(provider, seattle_request(), tracer_provider)
+
+
+async def test_mystery_block_still_raises(tracer_provider: TracerProvider) -> None:
+    body = message_body(content=[THINKING, {"type": "mystery", "data": "?"}])
+    provider = AnthropicProvider(replay_responses((200, body)))
+    with pytest.raises(ProviderResponseError, match="unknown content block type 'mystery'"):
+        await complete_in_span(provider, seattle_request(), tracer_provider)
+
+
+async def test_recorded_responses_keep_raw_content(tracer_provider: TracerProvider) -> None:
+    for scenario in ("tool_use", "final_answer"):
+        body = load_fixture(scenario)["body"]
+        provider = AnthropicProvider(replay_client(scenario))
+        response = await complete_in_span(provider, seattle_request(), tracer_provider)
+        assert [b["type"] for b in response.raw_content] == [b["type"] for b in body["content"]]
+        assert response.thinking_blocks == 0
+        assert_valid_block_params(response.raw_content)
+
+
+async def test_assistant_turn_with_raw_content_sent_verbatim(
+    tracer_provider: TracerProvider,
+) -> None:
+    captured: list[dict[str, Any]] = []
+    first = AnthropicProvider(replay_client("thinking_tool_use", "final_answer", requests=captured))
+    tool_use = await complete_in_span(first, seattle_request(), tracer_provider)
+    follow_up = ModelRequest(
+        model="claude-sonnet-5-5",
+        system="You are a helpful assistant.",
+        turns=[
+            UserTurn(text="Find the weather in Seattle"),
+            AssistantTurn(
+                text=tool_use.text, tool_calls=tool_use.tool_calls, raw_content=tool_use.raw_content
+            ),
+            ToolResultsTurn(results=(ToolResult(tool_use.tool_calls[0].id, '{"temp_c": 12}'),)),
+        ],
+        tools=[WEATHER_TOOL],
+        params={"max_tokens": 1024},
+    )
+
+    await complete_in_span(first, follow_up, tracer_provider)
+
+    assistant = captured[1]["messages"][1]
+    assert assistant == {
+        "role": "assistant",
+        "content": load_fixture("thinking_tool_use")["body"]["content"],
+    }
+    assert [b["type"] for b in assistant["content"]] == ["thinking", "tool_use"]
 
 
 @pytest.mark.parametrize(
