@@ -1,6 +1,6 @@
 {
   "scenario": "thinking_tool_use",
-  "source": "synthetic",
+  "source": "constructed",
   "sdk_version": "2.11.0",
   "model": "claude-sonnet-5-5",
   "recorded_at": "2026-11-19T00:00:00Z",
