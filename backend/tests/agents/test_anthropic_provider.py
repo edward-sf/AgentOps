@@ -252,6 +252,8 @@ async def test_mystery_block_still_raises(tracer_provider: TracerProvider) -> No
 
 RECORDED_LAYOUTS = {
     "tool_use": load_fixture("tool_use")["body"],
+    "thinking_after_tool": load_fixture("thinking_after_tool")["body"],
+    "thinking_answer": load_fixture("thinking_answer")["body"],
     **{f"final_answer-{name}": body for name, body in FINAL_LAYOUTS.items()},
     **{f"thinking_tool_use-{name}": body for name, body in TOOL_USE_LAYOUTS.items()},
 }
@@ -268,6 +270,21 @@ async def test_recorded_responses_keep_raw_content(
     assert response.text == expected_text(body)
     assert response.thinking_blocks == expected_thinking_blocks(body)
     assert_valid_block_params(response.raw_content)
+
+
+@pytest.mark.parametrize("scenario", ["thinking_after_tool", "thinking_answer"])
+async def test_thinking_answer_fixtures_parsed(
+    scenario: str, tracer_provider: TracerProvider
+) -> None:
+    """The shapes the M2 evaluation saw: a thinking block on an answer (spec M2.T11)."""
+    body = load_fixture(scenario)["body"]
+    provider = AnthropicProvider(replay_client(scenario))
+    response = await complete_in_span(provider, seattle_request(), tracer_provider)
+    assert response.stop_reason == "end_turn"
+    assert response.tool_calls == ()
+    assert response.text == expected_text(body)
+    assert response.thinking_blocks == expected_thinking_blocks(body) >= 1
+    assert response.raw_content == tuple(wire_form(body["content"]))
 
 
 @pytest.mark.parametrize("final_layout", sorted(FINAL_LAYOUTS))

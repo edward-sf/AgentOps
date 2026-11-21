@@ -116,3 +116,8 @@ def final_answer_layouts() -> dict[str, dict[str, Any]]:
         "fixture": body,
         "thinking-text": with_content(body, [LAYOUT_THINKING, *blocks(body, "text")]),
     }
+
+
+def without_thinking(body: dict[str, Any]) -> dict[str, Any]:
+    """`body` with its thinking blocks removed: a response where the model chose not to think."""
+    return with_content(body, [b for b in body["content"] if b["type"] not in THINKING_TYPES])

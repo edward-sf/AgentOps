@@ -93,15 +93,17 @@ def test_every_scenario_has_a_fixture() -> None:
         assert fixtures[name]["source"] == "constructed"
 
 
+AWAITING_RECORDING = ("thinking_after_tool", "thinking_answer")
 NOT_YET_RECORDED = pytest.mark.xfail(
-    strict=True, reason="author records thinking_tool_use with make record before approval"
+    strict=True,
+    reason="author records the thinking fixtures with make record before approval",
 )
 
 
 @pytest.mark.parametrize(
     "scenario",
     [
-        pytest.param(s, marks=NOT_YET_RECORDED) if s == "thinking_tool_use" else s
+        pytest.param(s, marks=NOT_YET_RECORDED) if s in AWAITING_RECORDING else s
         for s in RECORDABLE_SCENARIOS
     ],
 )

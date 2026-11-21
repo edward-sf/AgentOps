@@ -215,6 +215,33 @@ async def test_replayed_thinking_tool_use_sends_thinking_back(
     ]
 
 
+@pytest.mark.parametrize(
+    "scenarios",
+    [("tool_use", "thinking_after_tool"), ("thinking_answer",)],
+    ids=["thinking_after_tool", "thinking_answer"],
+)
+async def test_replayed_thinking_answer_completes(
+    db_session: AsyncSession, scenarios: tuple[str, ...]
+) -> None:
+    """The shapes the M2 evaluation failed on (run 648a1255) now complete."""
+    captured: list[dict[str, Any]] = []
+    client = replay_client(*scenarios, requests=captured)
+    outcome, stored, spans = await run(db_session, AnthropicProvider(client, sleep=no_sleep))
+
+    bodies = [load_fixture(s)["body"] for s in scenarios]
+    assert outcome.status == "completed"
+    assert stored.output == (expected_text(bodies[-1]) or "")
+    llm = of_kind(spans, "llm")
+    assert [s.attributes["agentops.llm.thinking_blocks"] for s in llm] == [
+        expected_thinking_blocks(b) for b in bodies
+    ]
+    if len(scenarios) == 2:
+        assert captured[1]["messages"][1] == {
+            "role": "assistant",
+            "content": wire_form(bodies[0]["content"]),
+        }
+
+
 def stored_model(provider: ScriptedProvider) -> str:
     return provider.requests[0].model
 
