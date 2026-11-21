@@ -86,8 +86,9 @@ FRANCE = "What is the capital of France?"
 WEATHER_BOT_TOOL = TOOLS["get_weather"]
 THINKING_AFTER_TOOL_QUESTION = "What's the temperature in London in Fahrenheit?"
 """case_006: `tool_use` without thinking, then a thinking block on the answer after the tool."""
-THINKING_ANSWER_QUESTION = "What's the weather like in Narnia today?"
-"""case_015: a thinking block on a first call that answers without a tool."""
+THINKING_ANSWER_QUESTION = "Is it colder there than here?"
+"""case_019: no locations, so the model can't call the tool and asks which places are meant. It
+thought on that first call in run 648a1255."""
 REPLAY_FOLLOW_UP = "Thanks."
 
 THINKING_ATTEMPTS = 5
@@ -124,7 +125,13 @@ class UnexpectedResponse(Exception):
 
 
 class FailedAttempt(Exception):
-    """One attempt at a thinking scenario gave an unusable response; it is retried."""
+    """One attempt at a thinking scenario gave an unusable response; it is retried.
+
+    The message ends with the response's thinking-block count, to show what the model did.
+    """
+
+    def __init__(self, reason: str, response: ModelResponse) -> None:
+        super().__init__(f"{reason} (thinking blocks: {response.thinking_blocks})")
 
 
 async def _call(
@@ -153,9 +160,11 @@ async def _attempt(
     body: dict[str, Any] = raw.http_response.json()
     response = parse_message(await raw.parse())
     if response.stop_reason != expected_stop:
-        raise FailedAttempt(f"expected stop_reason {expected_stop!r}, got {response.stop_reason!r}")
+        raise FailedAttempt(
+            f"expected stop_reason {expected_stop!r}, got {response.stop_reason!r}", response
+        )
     if thinking and not response.thinking_blocks:
-        raise FailedAttempt("no thinking block")
+        raise FailedAttempt("no thinking block", response)
     return body, response
 
 
@@ -181,11 +190,11 @@ async def _thinking_after_tool(
     results: list[ToolResult] = []
     for call in call_1.tool_calls:
         if call.name != WEATHER_BOT_TOOL.spec.name:
-            raise FailedAttempt(f"model called unknown tool {call.name!r}")
+            raise FailedAttempt(f"model called unknown tool {call.name!r}", call_1)
         try:
             content = await WEATHER_BOT_TOOL.func(call.arguments)
         except ValueError as exc:
-            raise FailedAttempt(f"get_weather failed: {exc}") from exc
+            raise FailedAttempt(f"get_weather failed: {exc}", call_1) from exc
         results.append(ToolResult(call.id, content))
     turns: list[Turn] = [
         *question,

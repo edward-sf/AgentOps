@@ -13,6 +13,7 @@ from app.agents.tools import TOOLS
 from app.config import Settings
 from tests.agents.replay import (
     blocks,
+    expected_thinking_blocks,
     load_fixture,
     replay_responses,
     wire_form,
@@ -198,13 +199,11 @@ async def test_thinking_after_tool_retried_until_call_2_thinks(
     assert captured[4]["messages"] == [user(record.THINKING_AFTER_TOOL_QUESTION)]
     await assert_tool_loop_request(captured[5], captured[6], load_fixture("tool_use")["body"])
     await assert_tool_loop_request(captured[7], captured[8], thinking_call_1)
-    err = capsys.readouterr().err
-    assert (
-        "thinking_after_tool: attempt 1 of 5: expected stop_reason 'tool_use', got 'end_turn'"
-        in err
-    )
-    assert "thinking_after_tool: attempt 2 of 5: no thinking block" in err
-    assert "attempt 3" not in err
+    assert capsys.readouterr().err.splitlines() == [
+        "thinking_after_tool: attempt 1 of 5: expected stop_reason 'tool_use', got 'end_turn' "
+        "(thinking blocks: 0)",
+        "thinking_after_tool: attempt 2 of 5: no thinking block (thinking blocks: 0)",
+    ]
 
 
 async def test_thinking_answer_retried_after_no_thinking_and_wrong_stop_reason(
@@ -215,7 +214,9 @@ async def test_thinking_answer_retried_after_no_thinking_and_wrong_stop_reason(
         *first_four(),
         *after_tool_success(),
         no_thinking("direct_answer"),
-        ok("tool_use"),  # an unexpected stop reason is a failed attempt, not an abort
+        # A tool call where an answer was expected, here with a thinking block. An unexpected
+        # stop reason is a failed attempt, not an abort.
+        ok("thinking_tool_use"),
         *answer_success(),
         requests=captured,
     )
@@ -228,9 +229,13 @@ async def test_thinking_answer_retried_after_no_thinking_and_wrong_stop_reason(
     )
     assert len(captured) == 4 + 2 + 3 + 1
     assert all(r["messages"] == [user(record.THINKING_ANSWER_QUESTION)] for r in captured[6:9])
-    err = capsys.readouterr().err
-    assert "thinking_answer: attempt 1 of 5: no thinking block" in err
-    assert "thinking_answer: attempt 2 of 5: expected stop_reason 'end_turn', got 'tool_use'" in err
+    thinking = expected_thinking_blocks(load_fixture("thinking_tool_use")["body"])
+    assert thinking == 1
+    assert capsys.readouterr().err.splitlines() == [
+        "thinking_answer: attempt 1 of 5: no thinking block (thinking blocks: 0)",
+        "thinking_answer: attempt 2 of 5: expected stop_reason 'end_turn', got 'tool_use' "
+        f"(thinking blocks: {thinking})",
+    ]
 
 
 async def test_worst_case_request_count(tmp_path: Path) -> None:
@@ -281,11 +286,14 @@ async def test_five_failed_attempts_write_nothing(
 
     assert code == 1
     assert len(captured) == requests
-    err = capsys.readouterr().err.splitlines()
-    assert err[-1] == (
+    assert capsys.readouterr().err.splitlines() == [
+        *(
+            f"{scenario}: attempt {n} of 5: no thinking block (thinking blocks: 0)"
+            for n in range(1, 6)
+        ),
         f"{scenario}: no usable response in 5 attempts; "
-        "nothing was written; it is safe to rerun 'make record'"
-    )
+        "nothing was written; it is safe to rerun 'make record'",
+    ]
     assert entries(tmp_path) == []
 
 
