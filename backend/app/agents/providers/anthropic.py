@@ -1,11 +1,14 @@
 """Anthropic adapter on the plain SDK (spec D6).
 
-- Responses are parsed strictly: only `text` and `tool_use` blocks are understood (D3).
+- Responses are parsed strictly: only `text`, `tool_use`, `thinking` and `redacted_thinking`
+  blocks are understood (D3). Every block is also kept as sent, so an assistant turn can be
+  replayed unchanged, thinking signatures included (M2.T11).
 - The SDK's own retries and OTel spans are off. Transient errors are retried here, inside the
   caller's current span, and each failed attempt is recorded on it (D9).
 """
 
 import asyncio
+import copy
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -50,6 +53,9 @@ def _turn_to_message(turn: Turn) -> dict[str, Any]:
     if isinstance(turn, UserTurn):
         return {"role": "user", "content": turn.text}
     if isinstance(turn, AssistantTurn):
+        if turn.raw_content:
+            # Verbatim, in order: the API rejects edited or reordered thinking blocks.
+            return {"role": "assistant", "content": copy.deepcopy(list(turn.raw_content))}
         content: list[dict[str, Any]] = []
         if turn.text:
             content.append({"type": "text", "text": turn.text})
@@ -116,7 +122,8 @@ def _field(obj: object, name: str, expected: type | tuple[type, ...], where: str
 def parse_message(message: Message) -> ModelResponse:
     """Turn an SDK `Message` into a `ModelResponse`, or raise `ProviderResponseError`.
 
-    The SDK does not validate responses, so every field used here is checked.
+    The SDK does not validate responses, so every field used here is checked. Thinking text is
+    never part of `text`; thinking blocks are kept only in `raw_content`, for replay.
     """
     content = _field(message, "content", list, "message")
     texts: list[str] = []
@@ -124,7 +131,12 @@ def parse_message(message: Message) -> ModelResponse:
     for i, block in enumerate(content):
         where = f"content[{i}]"
         block_type = getattr(block, "type", None)
-        if block_type == "text":
+        if block_type == "thinking":
+            _field(block, "thinking", str, where)
+            _field(block, "signature", str, where)
+        elif block_type == "redacted_thinking":
+            _field(block, "data", str, where)
+        elif block_type == "text":
             texts.append(_field(block, "text", str, where))
         elif block_type == "tool_use":
             calls.append(
@@ -146,6 +158,7 @@ def parse_message(message: Message) -> ModelResponse:
         response_model=_field(message, "model", str, "message"),
         input_tokens=_field(usage, "input_tokens", int, "usage"),
         output_tokens=_field(usage, "output_tokens", int, "usage"),
+        raw_content=tuple(block.model_dump(mode="json", exclude_none=True) for block in content),
     )
 
 

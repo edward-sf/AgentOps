@@ -3,9 +3,17 @@ from typing import Any
 
 import httpx2
 import pytest
+from anthropic.types import (
+    ContentBlockParam,
+    RedactedThinkingBlockParam,
+    TextBlockParam,
+    ThinkingBlockParam,
+    ToolUseBlockParam,
+)
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from pydantic import TypeAdapter
 
 from app.agents.providers.anthropic import AnthropicProvider, make_anthropic_client
 from app.agents.providers.base import (
@@ -20,7 +28,18 @@ from app.agents.providers.base import (
     ToolSpec,
     UserTurn,
 )
-from tests.agents.replay import load_fixture, replay_client, replay_responses
+from tests.agents.replay import (
+    assert_thinking_before_tool_use,
+    blocks,
+    expected_text,
+    expected_thinking_blocks,
+    final_answer_layouts,
+    load_fixture,
+    replay_client,
+    replay_responses,
+    thinking_tool_use_layouts,
+    wire_form,
+)
 
 WEATHER_TOOL = ToolSpec(
     name="get_weather",
@@ -132,6 +151,174 @@ def message_body(**overrides: Any) -> dict[str, Any]:
     body: dict[str, Any] = dict(load_fixture("final_answer")["body"])
     body.update(overrides)
     return body
+
+
+# --- thinking blocks (M2.T11) ---------------------------------------------------------------
+
+CONTENT_BLOCK_PARAM: TypeAdapter[Any] = TypeAdapter(ContentBlockParam)
+PARAM_KEYS = {
+    "text": set(TextBlockParam.__annotations__),
+    "thinking": set(ThinkingBlockParam.__annotations__),
+    "redacted_thinking": set(RedactedThinkingBlockParam.__annotations__),
+    "tool_use": set(ToolUseBlockParam.__annotations__),
+}
+REDACTED = {"type": "redacted_thinking", "data": "EmwKAhgBEgy3va3pzix/LafPsn4aDFIT2Xlxh0L5L8rLVyIw"}
+THINKING = {
+    "type": "thinking",
+    "thinking": "",
+    "signature": "EqQBCgIYAhIM1gbcDa9GJwZA2b3hGgxBdjrkzLoky3dl1pk",
+}
+
+
+def assert_valid_block_params(blocks: tuple[dict[str, Any], ...]) -> None:
+    """Every block is a content-block param the SDK accepts, with no field it doesn't know."""
+    for block in blocks:
+        CONTENT_BLOCK_PARAM.validate_python(block)
+        assert set(block) <= PARAM_KEYS[block["type"]], block
+
+
+TOOL_USE_LAYOUTS = thinking_tool_use_layouts()
+FINAL_LAYOUTS = final_answer_layouts()
+
+
+@pytest.mark.parametrize("layout", sorted(TOOL_USE_LAYOUTS))
+async def test_thinking_then_tool_use_parsed(layout: str, tracer_provider: TracerProvider) -> None:
+    body = TOOL_USE_LAYOUTS[layout]
+    provider = AnthropicProvider(replay_responses((200, body)))
+
+    response = await complete_in_span(provider, seattle_request(), tracer_provider)
+
+    assert response.stop_reason == "tool_use"
+    assert response.tool_calls == tuple(
+        ToolCall(id=b["id"], name=b["name"], arguments=b["input"]) for b in blocks(body, "tool_use")
+    )
+    assert response.text == expected_text(body)
+    assert response.raw_content == tuple(wire_form(body["content"]))
+    assert response.thinking_blocks == expected_thinking_blocks(body)
+    assert_thinking_before_tool_use(response.raw_content)
+    assert_valid_block_params(response.raw_content)
+
+
+async def test_redacted_thinking_parsed(tracer_provider: TracerProvider) -> None:
+    text = {"type": "text", "text": "Seattle is rainy."}
+    body = message_body(content=[REDACTED, text])
+    provider = AnthropicProvider(replay_responses((200, body)))
+
+    response = await complete_in_span(provider, seattle_request(), tracer_provider)
+
+    assert response.text == "Seattle is rainy."
+    assert response.raw_content == (REDACTED, text)
+    assert response.thinking_blocks == 1
+    assert_valid_block_params(response.raw_content)
+
+
+async def test_thinking_text_never_becomes_response_text(tracer_provider: TracerProvider) -> None:
+    # A summarised (not omitted) block, sitting between text and a tool call.
+    shown = {**THINKING, "thinking": "I should look this up."}
+    tool = {"type": "tool_use", "id": "toolu_9", "name": "get_weather", "input": {"location": "X"}}
+    before = {"type": "text", "text": "Checking."}
+    body = message_body(content=[before, shown, tool], stop_reason="tool_use")
+    provider = AnthropicProvider(replay_responses((200, body)))
+
+    response = await complete_in_span(provider, seattle_request(), tracer_provider)
+
+    assert response.text == "Checking."
+    assert response.raw_content == (before, shown, tool)
+    assert response.thinking_blocks == 1
+
+
+@pytest.mark.parametrize(
+    ("block", "match"),
+    [
+        ({"type": "thinking", "thinking": ""}, "signature"),
+        ({"type": "thinking", "signature": "sig"}, "thinking"),
+        ({"type": "redacted_thinking"}, "data"),
+    ],
+)
+async def test_ill_typed_thinking_block_raises(
+    block: dict[str, Any], match: str, tracer_provider: TracerProvider
+) -> None:
+    provider = AnthropicProvider(replay_responses((200, message_body(content=[block]))))
+    with pytest.raises(ProviderResponseError, match=match):
+        await complete_in_span(provider, seattle_request(), tracer_provider)
+
+
+async def test_mystery_block_still_raises(tracer_provider: TracerProvider) -> None:
+    body = message_body(content=[THINKING, {"type": "mystery", "data": "?"}])
+    provider = AnthropicProvider(replay_responses((200, body)))
+    with pytest.raises(ProviderResponseError, match="unknown content block type 'mystery'"):
+        await complete_in_span(provider, seattle_request(), tracer_provider)
+
+
+RECORDED_LAYOUTS = {
+    "tool_use": load_fixture("tool_use")["body"],
+    "thinking_after_tool": load_fixture("thinking_after_tool")["body"],
+    "thinking_answer": load_fixture("thinking_answer")["body"],
+    **{f"final_answer-{name}": body for name, body in FINAL_LAYOUTS.items()},
+    **{f"thinking_tool_use-{name}": body for name, body in TOOL_USE_LAYOUTS.items()},
+}
+
+
+@pytest.mark.parametrize("layout", sorted(RECORDED_LAYOUTS))
+async def test_recorded_responses_keep_raw_content(
+    layout: str, tracer_provider: TracerProvider
+) -> None:
+    body = RECORDED_LAYOUTS[layout]
+    provider = AnthropicProvider(replay_responses((200, body)))
+    response = await complete_in_span(provider, seattle_request(), tracer_provider)
+    assert response.raw_content == tuple(wire_form(body["content"]))
+    assert response.text == expected_text(body)
+    assert response.thinking_blocks == expected_thinking_blocks(body)
+    assert_valid_block_params(response.raw_content)
+
+
+@pytest.mark.parametrize("scenario", ["thinking_after_tool", "thinking_answer"])
+async def test_thinking_answer_fixtures_parsed(
+    scenario: str, tracer_provider: TracerProvider
+) -> None:
+    """The shapes the M2 evaluation saw: a thinking block on an answer (spec M2.T11)."""
+    body = load_fixture(scenario)["body"]
+    provider = AnthropicProvider(replay_client(scenario))
+    response = await complete_in_span(provider, seattle_request(), tracer_provider)
+    assert response.stop_reason == "end_turn"
+    assert response.tool_calls == ()
+    assert response.text == expected_text(body)
+    assert response.thinking_blocks == expected_thinking_blocks(body) >= 1
+    assert response.raw_content == tuple(wire_form(body["content"]))
+
+
+@pytest.mark.parametrize("final_layout", sorted(FINAL_LAYOUTS))
+@pytest.mark.parametrize("tool_layout", sorted(TOOL_USE_LAYOUTS))
+async def test_assistant_turn_with_raw_content_sent_verbatim(
+    tool_layout: str, final_layout: str, tracer_provider: TracerProvider
+) -> None:
+    tool_body = TOOL_USE_LAYOUTS[tool_layout]
+    captured: list[dict[str, Any]] = []
+    provider = AnthropicProvider(
+        replay_responses((200, tool_body), (200, FINAL_LAYOUTS[final_layout]), requests=captured)
+    )
+    tool_use = await complete_in_span(provider, seattle_request(), tracer_provider)
+    follow_up = ModelRequest(
+        model="claude-sonnet-5-5",
+        system="You are a helpful assistant.",
+        turns=[
+            UserTurn(text="Find the weather in Seattle"),
+            AssistantTurn(
+                text=tool_use.text, tool_calls=tool_use.tool_calls, raw_content=tool_use.raw_content
+            ),
+            ToolResultsTurn(
+                results=tuple(ToolResult(c.id, '{"temp_c": 12}') for c in tool_use.tool_calls)
+            ),
+        ],
+        tools=[WEATHER_TOOL],
+        params={"max_tokens": 1024},
+    )
+
+    await complete_in_span(provider, follow_up, tracer_provider)
+
+    assistant = captured[1]["messages"][1]
+    assert assistant == {"role": "assistant", "content": wire_form(tool_body["content"])}
+    assert_thinking_before_tool_use(assistant["content"])
 
 
 @pytest.mark.parametrize(
